@@ -128,15 +128,14 @@ parser.on('data', async (data) => {
             return; 
         }    
      }else if (waitingformessage) {
-    
-          const message = data.trim();
+         
+         const message = data.trim();
            //if message = summary perform calculation 
          
           if (!message || message === 'OK') return;
            
-           await extractMessageWithDash(message) //
                await insertSMS(parsed.sender, message, parsed.datetime_received, comport);
-               isInserted = true;
+        
                io.emit('new_sms', {
                    sender: parsed.sender,
                    message
@@ -144,37 +143,43 @@ parser.on('data', async (data) => {
           waitingformessage = false;
           isReply = false; 
         
-    
               if(message.toLowerCase() === "summary") {
                 
-               const total  = await calculateTotalCol();  // inserted, can be enhanced to check actual db insert result
-               
-               if(isInserted) { 
+                const total  = await calculateTotalCol();  // inserted, can be enhanced to check actual db insert result   
                  console.log("Number texted: ", parsed.sender); 
                  console.log("total ", JSON.stringify(total)); 
              
                  port.write(`AT+CMGS="${parsed.sender}"\r`);  // number  
                  // // wait for > prompt
-                 port.write( `Today Summary \nTotal in Column A : ${total.ListColumnA.map((v, i) => `${v}`).join(' + ')} =  ${total.columnA} \nTotal in Column D : ${total.ListColumnD.map((v, i) => `${v}`).join(' + ')} =  ${total.columnD} \nTotal of Column A and D : ${total.columnA} + ${total.columnD} = ${total.total} ` + String.fromCharCode(26));
+                 port.write( `${total.message}` + String.fromCharCode(26));
                  // CTRL+Z
                  isReply = true 
                  return; 
-               }
+         
               
             }else if (parsed?.sender && parsed?.datetime_received) {
-             
-   
-               if(isInserted) { 
-                 console.log("Number texted: ", parsed.sender); 
-               //   console.log("total ", JSON.stringify(total)); 
-             
-                 port.write(`AT+CMGS="${parsed.sender}"\r`);  // number  
-                 // // wait for > prompt
-                 port.write( `DateTime Recieved: ${new Date().toLocaleString()} \nMessage: ${message}` + String.fromCharCode(26));
+                 const isExtracted = await extractMessageWithDash(message) // 
+            //    if(isExtracted.isInserted === false) {
+                  //const error_message = "Message should be in the format of 5 numbers separated by dashes, with middle 3 numbers must value have between 0-9\nExample : 12-5-6-4-56 ";
+                  port.write(`AT+CMGS="${parsed.sender}"\r`);  // number  
+                   // // wait for > prompt
+                  port.write( `${isExtracted.response}` + String.fromCharCode(26));
                  // CTRL+Z
-                 isReply = true 
-                 return; 
-               }
+                  return; 
+            //    }else {
+            //        isInserted = true;       
+            //        if(isInserted) { 
+            //            console.log("Number texted: ", parsed.sender); 
+            //            //   console.log("total ", JSON.stringify(total)); 
+            //            port.write(`AT+CMGS="${parsed.sender}"\r`);  // number  
+            //            // // wait for > prompt
+            //            port.write( `${response}` + String.fromCharCode(26));
+            //      // CTRL+Z
+            //            isReply = true 
+            //            return; 
+            //     }
+            // }
+                
                  return; 
               //  console
           } 
@@ -222,69 +227,90 @@ function CMGRParser(header) {
 async function calculateTotalCol(){ 
        //declare variables 
       let columnA = 0 ; 
-      let columnD = 0; 
+      let columnE= 0; 
       let total = 0 
       let message = " "   
       let ListColumnA = []
-      let ListColumnD = []
+      let ListColumnE= []
        //get the total from database 
 
       try { 
            const ListColumnAval = await Extract.findAll({
-            attributes: ['value_num1']
+            attributes: ['columnA']
            });
-           const ListColumnDval = await Extract.findAll({
-            attributes: ['value_num4']
+           const ListColumnEval = await Extract.findAll({
+            attributes: ['columnE']
            }); 
-            // list all in ListColumnA and ListColumnD 
+            // list all in ListColumnA and ListColumnE 
               ListColumnAval.forEach((item, index) => {
-                ListColumnA.push(item.value_num1); 
+                ListColumnA.push(item.columnA); 
                 });
-                ListColumnDval.forEach((item, index) => {
-                    ListColumnD.push(item.value_num4);
+                ListColumnEval.forEach((item, index) => {
+                    ListColumnE.push(item.columnE);
                 });
-           columnA = await Extract.sum("value_num1"); 
-           columnD = await Extract.sum("value_num4"); 
-           total =  columnA + columnD  ; 
+           columnA = await Extract.sum("columnA"); 
+           columnE = await Extract.sum("columnE"); 
+           total =  columnA + columnE  ; 
             
-            //  message = `Today Summary \nTotal in Column A : ${columnA} \nTotal in Column D : ${columnD} \nTotal of Column A and D : ${total} `;  
+          message = `Today Summary \nTotals in Column A : ${ListColumnA.map((v, i) => `${v}`).join(' + ')} =  ${columnA} \nTotal in Column E : ${ListColumnE.map((v, i) => `${v}`).join(' + ')} =  ${columnE} \nTotal of Column A and E : ${columnA} + ${columnE} = ${total} `;  
            
-        //    console.log(`column A:  ${columnA} , column D: ${columnD} , Total: ${total}` ); 
       } catch (error) {
-         console.log('Error fetching from database'); 
-        
+         console.log('Error fetching from database');  
       } 
       return {
-        columnA, 
-        columnD, 
-        total, 
-        ListColumnA, 
-        ListColumnD
+        message
       }; 
 } 
     //extract message 
     //extracts table contain value_num1, value_num2, value_num3, value_num4 for the 4 parts of the message
     //extractNumberedMessages can also use from the refrated.js it use the table extracteds with columnA, columnB, columnC, columnD
-async function extractMessageWithDash(message) {
+async function extractMessageWithDash(message) { 
      message = message.trim();
-     const regex = /^\d+-\d+-\d+-\d+$/;
+     let response = ""; 
+     const regex = /^\d+-\d+-\d+-\d+-\d+$/; // expects exactly 5 parts separated by dashes, all numeric sample: 12-23-34-45-56
      const isValidFormat = regex.test(message);
      if (!isValidFormat) {
-       return null; // or handle invalid format as needed  
+        response = "Invalid Format - Message should be in the format of 5 numbers separated by dashes\n Example: 12-5-6-4-56";
+     
+      return {
+         isInserted: false,
+         response
+      };  
      }
 
-      const parts = message.split('-');
-     
-      try {
-          let data = {};
-          parts.forEach((part , index )=> {
-             data[`value_num${index+1}`] = part;
-          });         
-            const extracted = await Extract.create(data)
-            console.log('Extracted data inserted:', extracted);
-      } catch (error) {
-          console.error('Error inserting extracted message:', error);
-      }
+     const columnList = ["columnA", "columnB", "columnC", "columnD", "columnE"]; 
+     const parts = message.split('-'); 
+     console.log("Extracted parts: ", parts);
+     const data = {}; 
+
+      // validation number column B = part[1] to D = part[3] must value of 0 -9 
+    if (parts.slice(1, 4).some(part => isNaN(part) || part < 0 || part > 9)) {
+      // response sample : Invalid Number : specific number should be between 0-9 for example if part[1] is invalid response should be Invalid Number - Column B should be between 0-9
+         const invalidColumns = [];
+            if (isNaN(parts[1]) || parts[1] < 0 || parts[1] > 9) invalidColumns.push(`Invalid Number - Column B : ${parts[1]} should be between 0-9`);
+            if (isNaN(parts[2]) || parts[2] < 0 || parts[2] > 9) invalidColumns.push(`Invalid Number - Column C : ${parts[2]} should be between 0-9`);
+            if (isNaN(parts[3]) || parts[3] < 0 || parts[3] > 9) invalidColumns.push(`Invalid Number - Column D : ${parts[3]} should be between 0-9`);
+           response = `${invalidColumns.join('\n')}`;
+        ;
+        return {
+         isInserted: false,
+         response
+      }; 
+     }
+     columnList.forEach((column, index) => {
+        data[column] = parseInt(parts[index]);
+     });
+    try {
+      await Extract.create(data);
+      response = `DateTime Recieved: ${new Date().toLocaleString()} \nMessage: ${message}`;
+      return {
+         isInserted: true,
+        response
+      }; 
+    } catch (error) {
+    console.error("Error creating record:", error);
+    return "An error occurred while creating the record.";
+  }
 }
     //test database 
     let lastid = 0; 

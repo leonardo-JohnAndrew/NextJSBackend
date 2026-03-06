@@ -24,6 +24,10 @@ const Extracted = sequelize.define('extracted', {
         type: DataTypes.INTEGER,
         allowNull: false,
       }, 
+    columnE:{ 
+        type: DataTypes.INTEGER, 
+        allowNull: false,
+    }, 
     dateTimeReceived: {
         type: DataTypes.DATE,
         defaultValue: DataTypes.NOW,

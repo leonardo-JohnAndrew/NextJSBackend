@@ -8,22 +8,26 @@ const Extract = sequelize.define('extract', {
         autoIncrement: true,
         primaryKey: true,
      },  
-    value_num1:{
+    columnA:{
         type: DataTypes.INTEGER,  
         allowNull: false,
      }, 
-    value_num2:{
+    columnB:{
         type: DataTypes.INTEGER,
         allowNull: false,
       }, 
-    value_num3:{
+    columnC:{
         type: DataTypes.INTEGER,
         allowNull: false,   
       },
-    value_num4:{
+    columnD:{
         type: DataTypes.INTEGER,
         allowNull: false,
       }, 
+    columnE:{ 
+        type: DataTypes.INTEGER, 
+        allowNull: false,
+    }, 
     dateTimeReceived: {
         type: DataTypes.DATE,
         defaultValue: DataTypes.NOW,
