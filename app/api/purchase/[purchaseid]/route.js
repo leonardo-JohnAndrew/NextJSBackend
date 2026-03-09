@@ -1,7 +1,7 @@
 import sequelize from "@/db/connection";
 import { Purchase, PurchaseItems } from "@/db/models";
 import { NextResponse } from "next/server";
-
+import crypto from "crypto";
 export async function GET(req, {params}) {
     await sequelize.sync(); 
     const {purchaseid}  = await params 

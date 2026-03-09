@@ -1,25 +1,54 @@
-import { Extracted } from "./db/models/index.js";
+import { Comport, Extracted ,SMS} from "./db/models/index.js";
 import sequelize from "./db/connection.js";
+import e from "express";
+import { register } from "module";
+import { read } from "fs";
 sequelize.sync({ alter: true }).then(() => console.log('Database synced')); 
 
 
 
  export async function extractNumberedMessages(message) {
  message = message.trim() ; 
- const regex = /^\d+-\d+-\d+-\d+$/;  
+ let isInserted = false; 
+ let response = ""; 
+ const regex = /^\d+-\d+-\d+-\d+-\d+$/;  
  if (!regex.test(message)) {
-    return "Invalid Format - Message should not be in the format of 4 numbers separated by dashes example\n 123-456-789-012";    
- }
+   response = "Invalid Format - Message should not be in the format of 5 numbers separated by dashes example\n 35-3-3-5-17";    
+   isInserted = false; 
+   return { 
+      isInserted , 
+      response 
+   } 
+}
  const columnList = ["columnA", "columnB", "columnC", "columnD"]; 
  const parts = message.split('-'); 
  const data = {};
+
+ if(parts.slice(1,4).some(part => isNaN(part) || part < 0 || part > 9)){ 
+   const invalidColumns = [] 
+     if(isNaN(parts[1]) || parts[1] < 0 || parts[1] > 9) invalidColumns.push(`Invalid Number - Column B : ${parts[1]} should be a between 0-9`);
+     if(isNaN(parts[2]) || parts[2] < 0 || parts[2] > 9) invalidColumns.push(`Invalid Number - Column C : ${parts[2]} should be a between 0-9`);
+     if(isNaN(parts[3]) || parts[3] < 0 || parts[3] > 9) invalidColumns.push(`Invalid Number - Column D : ${parts[3]} should be a between 0-9`);
+     response = invalidColumns.join('\n');
+     isInserted = false ; 
+     return { 
+        isInserted , 
+        response 
+     }
+ }
     columnList.forEach((column, index) => {
         data[column] = parseInt(parts[index], 10);
     });
  try {
-    const record = await Extracted.create(data); 
-   return "Record created successfully with values: " + JSON.stringify(record.toJSON());
- } catch (error) {
+     await Extracted.create(data); 
+    response = `DateTime Recieved: ${new Date().toLocaleString()} \nMessage: ${message}`;
+    isInserted = true; 
+   return { 
+      isInserted , 
+      response  
+   }
+     
+} catch (error) {
     console.error("Error creating record:", error);
     return "An error occurred while creating the record.";
  }
@@ -28,7 +57,7 @@ sequelize.sync({ alter: true }).then(() => console.log('Database synced'));
  export async  function calculateTotalCol(){ 
        //declare variables 
       let columnA = 0 ; 
-      let columnD = 0; 
+      let columnE = 0; 
       let total = 0 
       let message = " "   
       let ListColumnA = []
@@ -68,4 +97,52 @@ sequelize.sync({ alter: true }).then(() => console.log('Database synced'));
         message
       }; 
 } 
-
+export async function RegisterNumber(modemNumber, contactNum){ 
+ try { 
+     const existing = await Comport.findByPk(modemNumber, { 
+      attributes: ['contact_number'] 
+     }); 
+      if(existing) {
+       // update existing record if contact number is different 
+         if(existing.contact_number !== contactNum) {
+            await existing.update({ contact_number: contactNum }); 
+            console.log(`Updated modem ${modemNumber} with new contact number ${contactNum}`);   
+         }
+      } else{ 
+         const registered = await Comport.create({ 
+             port: modemNumber,
+               contact_number: contactNum
+            });
+          console.log('Registered: ', registered);
+         }
+  } catch (error) {
+       console.error("Error registering modem number: ", error);
+  }
+} 
+export async function ParseSender(header){ 
+    const match = header.match(/\+CMGL:\s*(\d+),"([^"]*)","([^"]*)","([^"]*)","([^"]*)"/) ||
+    header.match(/\+CMGR:\s*"([^"]*)","([^"]*)","([^"]*)","([^"]*)"/)
+    ||header.match(/\+CMGL:\s*(\d+),"([^"]*)","([^"]*)","([^"]*)","([^"]*)"/)
+    ||header.match(/\+CMT:\s*"([^"]*)",,"([^"]*)"/);
+   
+    console.log("Match: ", match);
+    if(!match){
+      return null;
+    } ;
+     
+    const [, sender ,dateTime] = match;
+    return {sender}
+}
+export async function InsertSMS(sender , content , comportNumber){ 
+   try{ 
+       await SMS.create({ 
+         sender : sender, 
+         content_message: content , 
+         read: true , 
+         port_number: comportNumber , 
+         datetime_received: new Date()  
+       })     
+   }catch(error){ 
+         console.error("Error inserting SMS: ", error);
+   } 
+}

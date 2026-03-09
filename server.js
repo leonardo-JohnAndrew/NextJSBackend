@@ -24,12 +24,12 @@ const modems = [
     // {port: 'COM9', pin: ""},
     // {port: 'COM10', pin: ""},
     // {port: 'COM11', pin: ""},
-    // {port: 'COM12', pin: ""},
+    {port: 'COM12', pin: ""},
     // {port: 'COM13', pin: ""},
     // {port: 'COM14', pin: ""},
-    {port: 'COM12', pin: ""},
+    // {port: 'COM12', pin: ""},
     // {port: 'COM16', pin: ""},
-    // {port: 'COM17', pin: ""},
+    {port: 'COM17', pin: ""},
     // {port: 'COM18', pin: ""}, 
 ]  // comport list & pin 
 
@@ -55,8 +55,7 @@ async function startModem(config) {
     let number; 
     let parsed = {}; 
    // const contact  = await findSimNum(80); 
-   // console.log(JSON.stringify(contact))
-   
+   // console.log(JSON.stringify(contact)) 
      
     const port = new SerialPort({
         path: comport, 
@@ -64,10 +63,8 @@ async function startModem(config) {
         incomingSMSIndication: true 
     });
     const parser = port.pipe(new ReadlineParser({ delimiter: '\r\n' }));
-    let sender = " "; 
     let waitingformessage = false; 
     let isReply = false ; 
-    let isInserted = false; 
     // open 
     port.on('open', () => {
         console.log(`Serial port ${comport} opened.`);
@@ -77,16 +74,19 @@ setTimeout(() => port.write('AT+CPIN?\r'), 500);
 setTimeout(() => port.write('AT+CMGF=1\r'), 1000);
 setTimeout(() => port.write('AT+CNUM\r'), 1500);
 setTimeout(() => port.write('AT+CSCS="GSM"\r'), 1500);
-setTimeout(() => port.write('AT+CPMS="ME","ME","ME"\r'), 2000); // preferred storage first
+setTimeout(() => port.write('AT+CPMS="ME","ME","ME"\r'), 2000); // set message format and validity period
 setTimeout(() => port.write('AT+CNMI=2,2,0,0,0\r'), 2500);
-setTimeout(() => port.write('AT+CMGL="REC UNREAD"\r'), 3000); // read all REC UNREAD 
+setTimeout(() => port.write('AT+CGMM\r'), 3000); // read all REC UNREAD 
+setTimeout(() => port.write('AT+CMGL="ALL"\r'), 3000); // read all REC UNREAD 
 
-});  
+    });  
 
 // data received 
 parser.on('data', async (data) => {
     // check lng for raw data 
     console.log(`Received data o[${comport}] raw: ${data}`);
+  
+    
     //check for lock status 
     if(data.includes('+CPIN:')) { 
         //console.log(`this [${comport}] is OKAY ` )
@@ -95,39 +95,33 @@ parser.on('data', async (data) => {
             port.write(`AT+CPIN=${pin}\r`); // enter PIN if needed 
             return ;
         } 
-         // console.log(number);  
-    
-          
+         // console.log(number);         
     } 
    if (data.includes('+CNUM')) {
-
        const match = data.match(/\+CNUM:\s*"[^"]*","([^"]*)"/);
-
        if (match) {
         const number = match[1]; // captured phone number
         RegisterModemNumbers(comport, number);
         }
-
         return;
     }
       // test insert plang toh kahit di bago ung message ma insert sa db   
         //  waitingformessage = true;  
       console.log("WAITING FOR MESSAGE......... "); 
    if (data.startsWith('+CMTI:')|| data.startsWith('+CMT:')) {
-      const match = data.match(/\+CMTI: "SM",(\d+)/) 
-      ||data.match(/\+CMTI: "ME",(\d+)/)
-      ||data.match(/\+CMT: "SM",(\d+)/)
-      ||data.match(/\+CMT: "ME",(\d+)/) ; // match for SIM or internal storage
       waitingformessage = true; // wait for new message 
-       
       const result = CMGRParser(data);
-      console.log("Parsed result from header: ", result);
-      if(result) {
+    //console.log("Parsed result from header: ", result);
+       if(result) {
+           if (!result.sender || !result.sender.startsWith('+63')) {
+               return; // ignore message
+           };
             parsed = result;
+             // check if number starts with +63
             //store parsed sender and datetime for use when message content arrives
             return; 
         }    
-     }else if (waitingformessage) {
+       }else if(waitingformessage){
          
          const message = data.trim();
            //if message = summary perform calculation 
@@ -135,7 +129,6 @@ parser.on('data', async (data) => {
           if (!message || message === 'OK') return;
            
                await insertSMS(parsed.sender, message, parsed.datetime_received, comport);
-        
                io.emit('new_sms', {
                    sender: parsed.sender,
                    message
@@ -143,49 +136,23 @@ parser.on('data', async (data) => {
           waitingformessage = false;
           isReply = false; 
         
-              if(message.toLowerCase() === "summary") {
-                
+              if(message.toLowerCase() === "summary") {               
                 const total  = await calculateTotalCol();  // inserted, can be enhanced to check actual db insert result   
-                 console.log("Number texted: ", parsed.sender); 
-                 console.log("total ", JSON.stringify(total)); 
-             
                  port.write(`AT+CMGS="${parsed.sender}"\r`);  // number  
                  // // wait for > prompt
                  port.write( `${total.message}` + String.fromCharCode(26));
                  // CTRL+Z
                  isReply = true 
                  return; 
-         
-              
             }else if (parsed?.sender && parsed?.datetime_received) {
-                 const isExtracted = await extractMessageWithDash(message) // 
-            //    if(isExtracted.isInserted === false) {
-                  //const error_message = "Message should be in the format of 5 numbers separated by dashes, with middle 3 numbers must value have between 0-9\nExample : 12-5-6-4-56 ";
+                  const isExtracted = await extractMessageWithDash(message) // 
                   port.write(`AT+CMGS="${parsed.sender}"\r`);  // number  
                    // // wait for > prompt
                   port.write( `${isExtracted.response}` + String.fromCharCode(26));
                  // CTRL+Z
-                  return; 
-            //    }else {
-            //        isInserted = true;       
-            //        if(isInserted) { 
-            //            console.log("Number texted: ", parsed.sender); 
-            //            //   console.log("total ", JSON.stringify(total)); 
-            //            port.write(`AT+CMGS="${parsed.sender}"\r`);  // number  
-            //            // // wait for > prompt
-            //            port.write( `${response}` + String.fromCharCode(26));
-            //      // CTRL+Z
-            //            isReply = true 
-            //            return; 
-            //     }
-            // }
-                
-                 return; 
-              //  console
-          } 
-
-            console.log(`New message from ${parsed.sender}: ${message}`);
-        
+                  return;          
+            } 
+            console.log(`New message from ${parsed.sender}: ${message}`);       
 } 
 }); 
 
@@ -214,7 +181,7 @@ function CMGRParser(header) {
         
         
         const datetime_received = new Date(yy, mm - 1, dd, hh, min, ss); 
-        console.log(`Parsed message from ${sender} received at ${datetime_received.toISOString()}`);
+       //  console.log(`Parsed message from ${sender} received at ${datetime_received.toISOString()}`);
         return {
             datetime_received,
             sender
@@ -256,7 +223,7 @@ async function calculateTotalCol(){
            
       } catch (error) {
          console.log('Error fetching from database');  
-      } 
+      }  
       return {
         message
       }; 
@@ -265,12 +232,16 @@ async function calculateTotalCol(){
     //extracts table contain value_num1, value_num2, value_num3, value_num4 for the 4 parts of the message
     //extractNumberedMessages can also use from the refrated.js it use the table extracteds with columnA, columnB, columnC, columnD
 async function extractMessageWithDash(message) { 
-     message = message.trim();
-     let response = ""; 
-     const regex = /^\d+-\d+-\d+-\d+-\d+$/; // expects exactly 5 parts separated by dashes, all numeric sample: 12-23-34-45-56
-     const isValidFormat = regex.test(message);
+    let response = ""; 
+     if(!message.startsWith("DATA:") && !message.startsWith("Data:")) { 
+         message =  `DATA:${message.trim()}`;
+     }   
+    //
+     const [prefix , number ] = message.split(":");
+    const regex = /^\d+-\d+-\d+-\d+-\d+$/; // expects exactly 5 parts separated by dashes, all numeric sample: 12-23-34-45-56
+     const isValidFormat = regex.test(number);
      if (!isValidFormat) {
-        response = "Invalid Format - Message should be in the format of 5 numbers separated by dashes\n Example: 12-5-6-4-56";
+        response = "Invalid Format";
      
       return {
          isInserted: false,
@@ -279,7 +250,7 @@ async function extractMessageWithDash(message) {
      }
 
      const columnList = ["columnA", "columnB", "columnC", "columnD", "columnE"]; 
-     const parts = message.split('-'); 
+     const parts = number.split('-'); 
      console.log("Extracted parts: ", parts);
      const data = {}; 
 
@@ -302,7 +273,7 @@ async function extractMessageWithDash(message) {
      });
     try {
       await Extract.create(data);
-      response = `DateTime Recieved: ${new Date().toLocaleString()} \nMessage: ${message}`;
+      response = `DateTime Recieved: ${new Date().toLocaleString()} \nMessage: ${number}`;
       return {
          isInserted: true,
         response
@@ -345,7 +316,7 @@ async function insertSMS(sender, content, datetime_received , comportNumber) { /
                 datetime_received : datetime_received, 
                 
             });
-            console.log('New SMS inserted:', newSMS);
+           //  console.log('New SMS inserted:', newSMS);
         } catch (error) {
             console.error('Error inserting SMS:', error);
         }
@@ -447,14 +418,11 @@ async function  getnumbertextedToSpecificPort(comportNum) {
                });
      return  contactNumbers? contactNumbers: {"null" : "null"}
 }
- // 
-
 // start modem for each config  
 io.on('connection', (socket) => {
     console.log('New client connected to websocket', socket.id);
 });   
-setInterval(() => {
-   modems.forEach(config => startModem(config)); 
-}, 5000); // new messages
-
+// setInterval(() => {
+// }, 7000); // new messages
+modems.forEach(config => startModem(config)); 
 

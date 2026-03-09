@@ -29,12 +29,17 @@ const PurchaseItems = sequelize.define('purchaseItems', {
     }, 
     Quantity:{ 
         type: DataTypes.INTEGER , 
-        allowNull: false, 
+        allowNull: true, 
         defaultValue: 0 ,   
     },  
     UnitPrice: { 
         type: DataTypes.INTEGER , 
-        allowNull: false , 
+        allowNull: true, 
+        defaultValue: 0 
+    }, 
+    Total:{ 
+        type: DataTypes.INTEGER,
+        allowNull: true,  
         defaultValue: 0 
     }
 },{})

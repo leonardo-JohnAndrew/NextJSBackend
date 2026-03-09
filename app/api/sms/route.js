@@ -2,9 +2,6 @@ import { NextResponse } from 'next/server';
  
 const sequelize = require("@/db/connection"); 
 const {SMS }  = require('../../../db/models/index')
-// crud 
-
-
  // Post 
    export async function POST(request) {
      
