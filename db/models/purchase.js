@@ -30,6 +30,11 @@ const Purchase = sequelize.define('purchase', {
         allowNull: true, 
         defaultValue: false 
      }, 
+     Total:{
+         type: DataTypes.INTEGER,
+         allowNull: true,
+         defaultValue: 0
+     },
       timeStamp: { 
          type:DataTypes.DATE, 
          defaultValue: DataTypes.NOW

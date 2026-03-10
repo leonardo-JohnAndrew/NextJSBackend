@@ -7,6 +7,9 @@ import Purchase from "./purchase.js";
 import Comport from "./comport.js";
 import Extract from "./extract.js";
 import Extracted from "./extracted.js";
+import RegisteredSim from "./registeredNumber.js";
+import UnknownNumber from "./unknownNumber.js";
+import Group from "./group.js";
 // 1:m
 User.hasMany(SMS ,{
     foreignKey: { 
@@ -54,7 +57,27 @@ SMS.belongsTo(Comport, {
         name: "port_number"
     } ,
 })
-
+// registered_number many-many Extract 
+Group.hasMany(RegisteredSim, {
+    foreignKey:{ 
+        name: "group_no" 
+    }, 
+})
+Group.hasMany(Extract, { 
+    foreignKey: { 
+        name: "group_no"
+    } 
+}) 
+RegisteredSim.belongsTo(Group, { 
+    foreignKey: { 
+        name: "group_no"
+    }
+})
+Extract.belongsTo(Group,{ 
+     forignKey: { 
+        name: "group_no"
+    } 
+})
 export {
     User , 
     SMS , 
@@ -64,5 +87,8 @@ export {
     PurchaseItems, 
     Comport,
     Extract , 
-    Extracted
+    Extracted, 
+    Group,
+    RegisteredSim,
+    UnknownNumber 
 }

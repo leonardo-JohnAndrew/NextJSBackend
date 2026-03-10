@@ -33,6 +33,6 @@ const Extract = sequelize.define('extract', {
         defaultValue: DataTypes.NOW,
      }
 },{
-    timestamps: false,
+    timestamps: false
 });
 module.exports = Extract; 

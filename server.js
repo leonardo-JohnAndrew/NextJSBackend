@@ -6,12 +6,11 @@ const { Server } = require('socket.io');
 const { ReadlineParser } = require('@serialport/parser-readline');
 const   SMS  = require('./db/models/sms');
 const Comport = require('./db/models/comport');
+const RegisteredSim = require('./db/models/registeredNumber')
+const UnknownNumber = require('./db/models/unknownNumber');
 const  sequelize = require('./db/connection');
 const { Extract } = require('./db/models');
 const { json } = require('sequelize');
-
-
-
 
 // list of comports to check for GSM modem, with their corresponding PINs 
 const modems = [ 
@@ -27,7 +26,6 @@ const modems = [
     {port: 'COM12', pin: ""},
     // {port: 'COM13', pin: ""},
     // {port: 'COM14', pin: ""},
-    // {port: 'COM12', pin: ""},
     // {port: 'COM16', pin: ""},
     {port: 'COM17', pin: ""},
     // {port: 'COM18', pin: ""}, 
@@ -48,11 +46,10 @@ const io = new Server(server, {
  server.listen(3000, () => { 
     console.log('Websocket server listening on port 3000');
 }); 
- // extractMessageWithDash("40-20-12-15");
 
 async function startModem(config) {
     const {port: comport ,  pin} = config;
-    let number; 
+    let group; 
     let parsed = {}; 
    // const contact  = await findSimNum(80); 
    // console.log(JSON.stringify(contact)) 
@@ -75,18 +72,14 @@ setTimeout(() => port.write('AT+CMGF=1\r'), 1000);
 setTimeout(() => port.write('AT+CNUM\r'), 1500);
 setTimeout(() => port.write('AT+CSCS="GSM"\r'), 1500);
 setTimeout(() => port.write('AT+CPMS="ME","ME","ME"\r'), 2000); // set message format and validity period
-setTimeout(() => port.write('AT+CNMI=2,2,0,0,0\r'), 2500);
-setTimeout(() => port.write('AT+CGMM\r'), 3000); // read all REC UNREAD 
+setTimeout(() => port.write('AT+CNMI=2,2,0,0,0\r'), 2500)
 setTimeout(() => port.write('AT+CMGL="ALL"\r'), 3000); // read all REC UNREAD 
-
     });  
 
 // data received 
 parser.on('data', async (data) => {
     // check lng for raw data 
     console.log(`Received data o[${comport}] raw: ${data}`);
-  
-    
     //check for lock status 
     if(data.includes('+CPIN:')) { 
         //console.log(`this [${comport}] is OKAY ` )
@@ -109,24 +102,28 @@ parser.on('data', async (data) => {
         //  waitingformessage = true;  
       console.log("WAITING FOR MESSAGE......... "); 
    if (data.startsWith('+CMTI:')|| data.startsWith('+CMT:')) {
-      waitingformessage = true; // wait for new message 
-      const result = CMGRParser(data);
-    //console.log("Parsed result from header: ", result);
+       waitingformessage = true; // wait for new message 
+       const result = CMGRParser(data);
+       //console.log("Parsed result from header: ", result);
        if(result) {
            if (!result.sender || !result.sender.startsWith('+63')) {
+               // check if number starts with +63
+               waitingformessage = false;
                return; // ignore message
-           };
+            };
             parsed = result;
-             // check if number starts with +63
             //store parsed sender and datetime for use when message content arrives
+            const GroupNumber = await FindGroupNumber(parsed.sender);
+            group = await GroupNumber; 
+            console.log("Group No: ", group);
             return; 
         }    
-       }else if(waitingformessage){
-         
+    }else if(waitingformessage){
+        // console.log("Processing message content...");
          const message = data.trim();
            //if message = summary perform calculation 
          
-          if (!message || message === 'OK') return;
+          if (!message || message.toUpperCase() === 'OK') return;
            
                await insertSMS(parsed.sender, message, parsed.datetime_received, comport);
                io.emit('new_sms', {
@@ -144,15 +141,22 @@ parser.on('data', async (data) => {
                  // CTRL+Z
                  isReply = true 
                  return; 
-            }else if (parsed?.sender && parsed?.datetime_received) {
-                  const isExtracted = await extractMessageWithDash(message) // 
+            }else if (parsed?.sender && parsed?.datetime_received )  {
+                  const isExtracted = await extractMessageWithDash(parsed.sender, message,group ) // 
+                 
+                  if(isExtracted.isReply === false){ 
+                    return ; 
+                  }
                   port.write(`AT+CMGS="${parsed.sender}"\r`);  // number  
                    // // wait for > prompt
                   port.write( `${isExtracted.response}` + String.fromCharCode(26));
                  // CTRL+Z
-                  return;          
+                  return;       
+                  
+                  
             } 
-            console.log(`New message from ${parsed.sender}: ${message}`);       
+            console.log(`New message from ${parsed.sender}: ${message}`); 
+           
 } 
 }); 
 
@@ -162,7 +166,35 @@ port.on('error', () => {
     console.log(`Error on ${comport}, attempting to reconnect in 5 seconds...`); 
     setTimeout(() => startModem(config), 5000);
 })
-    }  
+    } 
+//find sender group functions 
+async function FindGroupNumber(sender){
+    let group_no = 0; 
+    try{ 
+        const GroupNumber = await RegisteredSim.findOne({
+            where: {contact_number: sender}, 
+            attributes: ['contact_number' , 'group_no']
+        }); 
+        return group_no = GroupNumber ? GroupNumber.group_no : 0 ; 
+    }catch(error){ 
+        console.log("message_error: ", error); 
+        return group_no; 
+    }
+}
+//insert function for unknow number 
+async function  InsertUnknownNumber(sender , message){ 
+ try{
+       const Unknown = await UnknownNumber.create({
+        unknown_contact_number: sender, 
+        message_content: message
+      }) 
+       console.log(Unknown); 
+       return 
+ }catch(error){ 
+    console.error("Error inserting unknown number: ", error); 
+    return; 
+ }
+}
 // function that perform breakdonw
 function CMGRParser(header) { 
     const match = header.match(/\+CMGL:\s*(\d+),"([^"]*)","([^"]*)","([^"]*)","([^"]*)"/) ||
@@ -231,18 +263,30 @@ async function calculateTotalCol(){
     //extract message 
     //extracts table contain value_num1, value_num2, value_num3, value_num4 for the 4 parts of the message
     //extractNumberedMessages can also use from the refrated.js it use the table extracteds with columnA, columnB, columnC, columnD
-async function extractMessageWithDash(message) { 
-    let response = ""; 
-     if(!message.startsWith("DATA:") && !message.startsWith("Data:")) { 
-         message =  `DATA:${message.trim()}`;
-     }   
-    //
+async function extractMessageWithDash( sender,  message, groupNumber) { 
+    const  isReply = false; 
+     if(groupNumber === 0) { 
+           // console.log("This number is Unknown"); 
+            await InsertUnknownNumber(sender ,message.trim()); 
+            waitingformessage = false;
+            return { 
+                isReply 
+            }; 
+        }
+    let response = "";  
      const [prefix , number ] = message.split(":");
-    const regex = /^\d+-\d+-\d+-\d+-\d+$/; // expects exactly 5 parts separated by dashes, all numeric sample: 12-23-34-45-56
+      if(prefix.toLowerCase() !== "data"){
+          response = `Text must start in Data: , \nexample: Data:0-0-0-0-0\ndata:0-0-0-0-0\nDATA:0-0-0-0-0` 
+          return { 
+         isInserted: false,
+         response
+          }  
+      }
+     const regex = /^\d+-\d+-\d+-\d+-\d+$/; // expects exactly 5 parts separated by dashes, all numeric sample: 12-23-34-45-56
      const isValidFormat = regex.test(number);
      if (!isValidFormat) {
-        response = "Invalid Format";
-     
+        //response validation message must be\n Data:0-0-0-0-0
+        response = `Invalid text format must be Data:0-0-0-0-0 ,example:\nData:1-2-3-4-5\ndata:1-2-3-4-5\nDATA:1-2-3-4-5`;
       return {
          isInserted: false,
          response
@@ -271,6 +315,8 @@ async function extractMessageWithDash(message) {
      columnList.forEach((column, index) => {
         data[column] = parseInt(parts[index]);
      });
+     data['group_no'] = groupNumber;
+     data['groupListGroupNo'] = groupNumber;
     try {
       await Extract.create(data);
       response = `DateTime Recieved: ${new Date().toLocaleString()} \nMessage: ${number}`;
@@ -280,7 +326,9 @@ async function extractMessageWithDash(message) {
       }; 
     } catch (error) {
     console.error("Error creating record:", error);
-    return "An error occurred while creating the record.";
+    return {
+         isReply
+    }
   }
 }
     //test database 

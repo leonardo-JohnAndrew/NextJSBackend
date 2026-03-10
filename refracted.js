@@ -1,4 +1,4 @@
-import { Comport, Extracted ,SMS} from "./db/models/index.js";
+import { Comport, Extracted  ,Extract ,SMS ,RegisteredSim, Group, UnknownNumber} from "./db/models/index.js";
 import sequelize from "./db/connection.js";
 import e from "express";
 import { register } from "module";
@@ -7,7 +7,7 @@ sequelize.sync({ alter: true }).then(() => console.log('Database synced'));
 
 
 
- export async function extractNumberedMessages(message) {
+ export async function extractNumberedMessages(message ,groupNumber) {
  message = message.trim() ; 
  let isInserted = false; 
  let response = ""; 
@@ -146,3 +146,47 @@ export async function InsertSMS(sender , content , comportNumber){
          console.error("Error inserting SMS: ", error);
    } 
 }
+async function GroupNumbers(){ 
+  
+   let grouped = await Group.findAll({
+      group:['group_no'] ,
+      where:{group_no: number}, 
+
+      include:[{
+          model:Extract
+      }]
+   })
+}
+
+//create function that sender find number in contact list and get his group number   
+export async function FindGroupNumber(sender){ 
+   let group_no = 0; 
+   try{ 
+      const GroupNumber = await RegisteredSim.findOne({
+         where: { contact_number: sender }, 
+         attributes: ['contact_number','group_no']
+      });
+     return group_no = GroupNumber ? GroupNumber.group_no : 0; 
+   }catch(error){ 
+      console.log("message_error: ", error);
+      return group_no;  
+   }
+
+}
+//insert function for unknown number 
+export  async function InsertUnknownNumber(sender, message){ 
+    try{ 
+          const Unknown =  await UnknownNumber.create({
+            unknown_contact_number: sender, 
+            message_content: message
+          }) 
+           console.log(Unknown); 
+           return  
+    }catch(error){ 
+          console.error("Error inserting unknown number: ", error);
+          return; 
+    }
+ }
+ console.log("Group No: ", await FindGroupNumber("+639579787978"));
+
+ 

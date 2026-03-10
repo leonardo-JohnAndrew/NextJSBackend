@@ -6,18 +6,21 @@ import http from "http";
 import {SerialPort} from "serialport";
 
 async function main() {
-     await  extractNumberedMessages('12-23-23-2').then((result) => {
-        console.log(result);
-    }).catch((error) => {
-        console.error("Error calculating totals:", error);
-    }
-    ); 
-    await calculateTotalCol().then((result) => {
-        console.log(result.message);
-    }).catch((error) => {
-       console.error("Error calculating totals:", error);
-    });
+    //  await  extractNumberedMessages('12-23-23-2').then((result) => {
+    //     console.log(result);
+    // }).catch((error) => {
+    //     console.error("Error calculating totals:", error);
+    // }
+    // ); 
+    // await calculateTotalCol().then((result) => {
+    //     console.log(result.message);
+    // }).catch((error) => {
+    //    console.error("Error calculating totals:", error);
+    // });
 }
+main();
+
+
  const modemConfig = [ 
     {port: 'COM12', pin: ""},
     {port: 'COM17', pin: ""}, 
@@ -133,23 +136,26 @@ async function  startModem(config) {
 }
 
 
-const app = express();  
-const server = http.createServer(app); 
-const io  = new Server(server, { 
-    cors: {
-        origin: "*", 
-    }
-});  
-server.listen(3001, () => {
-    console.log("Server is running on port 3001");
-});
+// const app = express();  
+// const server = http.createServer(app); 
+// const io  = new Server(server, { 
+//     cors: {
+//         origin: "*", 
+//     }
+// });  
+// server.listen(3001, () => {
+//     console.log("Server is running on port 3001");
+// });
 
-io.on('connection', (socket) => {
-    console.log('A client connected: ', socket.id);
-}); 
+// io.on('connection', (socket) => {
+//     console.log('A client connected: ', socket.id);
+// }); 
 
-modemConfig.forEach(config => {
-    startModem(config);
-});
+// modemConfig.forEach(config => {
+//     startModem(config);
+// });
 
+async function createMany(){ 
+ await RegisteredSim
+}
 
