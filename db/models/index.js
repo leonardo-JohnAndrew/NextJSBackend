@@ -74,12 +74,22 @@ RegisteredSim.belongsTo(Group, {
     }
 })
 Extract.belongsTo(Group,{ 
-     forignKey: { 
+     foreignKey: { 
         name: "group_no"
     } 
+}) 
+RegisteredSim.hasMany(Extract, { 
+    foreignKey: { 
+        name: "sim_id"
+    }
+})
+Extract.belongsTo(RegisteredSim, { 
+    foreignKey: { 
+        name: "sim_id"
+    }
 })
 export {
-    User , 
+  //  User , 
     SMS , 
     sequelize, 
     Table3, 

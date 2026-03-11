@@ -8,9 +8,11 @@ const   SMS  = require('./db/models/sms');
 const Comport = require('./db/models/comport');
 const RegisteredSim = require('./db/models/registeredNumber')
 const UnknownNumber = require('./db/models/unknownNumber');
+const Group = require('./db/models/group'); 
 const  sequelize = require('./db/connection');
 const { Extract } = require('./db/models');
 const { json } = require('sequelize');
+const { arrayBuffer } = require('stream/consumers');
 
 // list of comports to check for GSM modem, with their corresponding PINs 
 const modems = [ 
@@ -52,8 +54,7 @@ async function startModem(config) {
     let group; 
     let parsed = {}; 
    // const contact  = await findSimNum(80); 
-   // console.log(JSON.stringify(contact)) 
-     
+   // console.log(JSON.stringify(contact))  
     const port = new SerialPort({
         path: comport, 
         baudRate: 115200, 
@@ -134,7 +135,7 @@ parser.on('data', async (data) => {
           isReply = false; 
         
               if(message.toLowerCase() === "summary") {               
-                const total  = await calculateTotalCol();  // inserted, can be enhanced to check actual db insert result   
+                const total  = await calculateTotalCol(group);  // inserted, can be enhanced to check actual db insert result   
                  port.write(`AT+CMGS="${parsed.sender}"\r`);  // number  
                  // // wait for > prompt
                  port.write( `${total.message}` + String.fromCharCode(26));
@@ -169,16 +170,19 @@ port.on('error', () => {
     } 
 //find sender group functions 
 async function FindGroupNumber(sender){
+    let isLeader = false; 
     let group_no = 0; 
     try{ 
         const GroupNumber = await RegisteredSim.findOne({
             where: {contact_number: sender}, 
-            attributes: ['contact_number' , 'group_no']
+            attributes: ['contact_number' , 'group_no', 'isLeader']
         }); 
-        return group_no = GroupNumber ? GroupNumber.group_no : 0 ; 
+        return { 
+            group_no: GroupNumber ? GroupNumber.group_no : 0,
+            isLeader: GroupNumber.isLeader
+        };
     }catch(error){ 
         console.log("message_error: ", error); 
-        return group_no; 
     }
 }
 //insert function for unknow number 
@@ -219,40 +223,46 @@ function CMGRParser(header) {
             sender
         };
 }
+ //GROUP QUERY 
+ async function Grouping(numbers) {
+    let grouped = await Group.findAll({ 
+        where: { group_no: numbers },
+        include:[{
+            model:Extract,
+        }]
+     }) 
+     let groups = grouped[0].extracts; 
+     const ListColumnAval = [] 
+     const ListColumnEval = [] 
 
+     groups.forEach((item, index) => {
+        ListColumnAval.push(item.columnA); 
+        ListColumnEval.push(item.columnE); 
+     })
+
+     return {
+        ListColumnAval, 
+        ListColumnEval
+     }
+ }
     // calculate function
       //extracts table contain value_num1, value_num2, value_num3, value_num4 for the 4 parts of the message
     //calculateTotalCol can also use from the refrated.js it use the table extracteds with columnA, columnB, columnC, columnD
-async function calculateTotalCol(){ 
+async function calculateTotalCol(number){ 
        //declare variables 
       let columnA = 0 ; 
       let columnE= 0; 
       let total = 0 
       let message = " "   
-      let ListColumnA = []
-      let ListColumnE= []
-       //get the total from database 
+      let grouping = await Grouping(number);
+      let ListColumnA = grouping.ListColumnAval;
+      let ListColumnE= grouping.ListColumnEval;
+      try {        
+            columnA = ListColumnA.reduce((acc, val) => acc + val, 0); 
+            columnE = ListColumnE.reduce((acc, val) => acc + val, 0);
+            total =  columnA + columnE  ;       
+            message = `Today Summary \nTotals in Column A : ${ListColumnA.map((v, i) => `${v}`).join(' + ')} =  ${columnA} \nTotal in Column E : ${ListColumnE.map((v, i) => `${v}`).join(' + ')} =  ${columnE} \nTotal of Column A and E : ${columnA} + ${columnE} = ${total} `;  
 
-      try { 
-           const ListColumnAval = await Extract.findAll({
-            attributes: ['columnA']
-           });
-           const ListColumnEval = await Extract.findAll({
-            attributes: ['columnE']
-           }); 
-            // list all in ListColumnA and ListColumnE 
-              ListColumnAval.forEach((item, index) => {
-                ListColumnA.push(item.columnA); 
-                });
-                ListColumnEval.forEach((item, index) => {
-                    ListColumnE.push(item.columnE);
-                });
-           columnA = await Extract.sum("columnA"); 
-           columnE = await Extract.sum("columnE"); 
-           total =  columnA + columnE  ; 
-            
-          message = `Today Summary \nTotals in Column A : ${ListColumnA.map((v, i) => `${v}`).join(' + ')} =  ${columnA} \nTotal in Column E : ${ListColumnE.map((v, i) => `${v}`).join(' + ')} =  ${columnE} \nTotal of Column A and E : ${columnA} + ${columnE} = ${total} `;  
-           
       } catch (error) {
          console.log('Error fetching from database');  
       }  
@@ -316,7 +326,6 @@ async function extractMessageWithDash( sender,  message, groupNumber) {
         data[column] = parseInt(parts[index]);
      });
      data['group_no'] = groupNumber;
-     data['groupListGroupNo'] = groupNumber;
     try {
       await Extract.create(data);
       response = `DateTime Recieved: ${new Date().toLocaleString()} \nMessage: ${number}`;

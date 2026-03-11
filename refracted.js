@@ -1,5 +1,6 @@
 import { Comport, Extracted  ,Extract ,SMS ,RegisteredSim, Group, UnknownNumber} from "./db/models/index.js";
 import sequelize from "./db/connection.js";
+import {Op} from 'sequelize'
 import e from "express";
 import { register } from "module";
 import { read } from "fs";
@@ -149,30 +150,57 @@ export async function InsertSMS(sender , content , comportNumber){
 async function GroupNumbers(){ 
   
    let grouped = await Group.findAll({
-      group:['group_no'] ,
-      where:{group_no: number}, 
-
+      where: { group_no: 2 },
       include:[{
-          model:Extract
+          model:Extract, 
       }]
    })
+   let array = grouped[0].extracts;
+   const ListColumnAval = []
+   const ListColumnEval = []
+
+   array.forEach((item, index) => {
+      console.log("Group Number: ", item.group_no);
+      console.log("Column A: ", item.columnA);
+      console.log("Column B: ", item.columnB);
+      console.log("Column C: ", item.columnC);
+      console.log("Column D: ", item.columnD);
+      ListColumnAval.push(item.columnA);
+      ListColumnEval.push(item.columnE); 
+   }) 
+
+    //add all ColumnA values inside Array 
+    let totalA = ListColumnAval.reduce((acc, val) => acc + val, 0); 
+    let totalE = ListColumnEval.reduce((acc, val) => acc + val, 0); 
+    console.log("Total Column A: ", totalA);
+    console.log("Total Column E: ", totalE);
+
+   return { 
+      ListColumnAval, ListColumnEval
+   };
+
+   console.log("List Column A: ", ListColumnAval.join(' + '));
+   console.log("List Column E: ", ListColumnEval.join(' + '));
+
 }
 
 //create function that sender find number in contact list and get his group number   
-export async function FindGroupNumber(sender){ 
+ async function FindGroupNumber(sender){ 
    let group_no = 0; 
+   let isLeader = false; 
    try{ 
       const GroupNumber = await RegisteredSim.findOne({
          where: { contact_number: sender }, 
-         attributes: ['contact_number','group_no']
+         attributes: ['contact_number','group_no', 'isLeader']
       });
-     return group_no = GroupNumber ? GroupNumber.group_no : 0; 
+     return  { group_no : GroupNumber ? GroupNumber.group_no : 0
+      ,        isLeader: GroupNumber.isLeader
+              } ; 
    }catch(error){ 
-      console.log("message_error: ", error);
-      return group_no;  
+      console.log("message_error: ", error);   
    }
-
 }
+
 //insert function for unknown number 
 export  async function InsertUnknownNumber(sender, message){ 
     try{ 
@@ -187,6 +215,103 @@ export  async function InsertUnknownNumber(sender, message){
           return; 
     }
  }
- console.log("Group No: ", await FindGroupNumber("+639579787978"));
 
+ //for leaders 
+ async function Summary(sender){ 
+    const findGroup = await FindGroupNumber(sender);
+    if(findGroup.isLeader === false) return;
+
+    try{ 
+        const groups = await Group.findAll({
+            where: { group_no: 1 },
+            include: [{
+                model: RegisteredSim, 
+                include:[{
+                    model: Extract
+                }]
+            }]
+        });
+
+        let result = []
+       
+     //  console.log("Groups: ", groups[0].registered_sims[0].extracts);
+     //    return 
+
+        groups.forEach(group => {
+            group.registered_sims.forEach(sim => {
+
+                let total1 = 0;
+                let total2 = 0;
+
+                sim.extracts.forEach(ex => {
+                    total1 += ex.columnA || 0;
+                    total2 += ex.columnE || 0;
+                });
+
+                result.push({
+                    sim_number : sim.contact_number,
+                    total: total1 + total2
+                });
+
+            });
+        });
+
+      return { 
+         message : `Today Summary for Group ${findGroup.group_no} \n${result.map(r => `SIM: ${r.sim_number} - Total: ${r.total}`).join('\n')}`,
+      }
+
+    }catch(error){
+       console.log('Error fetching from database', error);
+    }
+}
+ //own summary function 
+ export async function  FindOwnSummary(sender) {
+     const dateRange = dateTodayRange(); 
+    try{
+        const summary = await RegisteredSim.findAll({
+          where: { 'contact_number': sender , 
+           createdAt: {
+              [Op.between]: [dateRange.start, dateRange.end]
+           }
+          },
+          include: [{
+            model: Extract,
+            attributes: ['columnA', 'columnE']
+          }]
+        })
+   
+        let extracts = summary[0]?.extracts || [];
+        let ListColumnA = [];
+        let ListColumnE = [];
+         extracts.forEach((item) => {
+            ListColumnA.push(item.columnA);
+            ListColumnE.push(item.columnE);
+         }) ;
+         console.log("List Column A: ", ListColumnA.join(' + '));
+         console.log("List Column E: ", ListColumnE.join(' + '));
+         return { 
+            ListColumnA,
+            ListColumnE
+         }
+    }catch(error){
+       console.log("Error fetching own summary: ", error);
+    }
+ }
+ function dateTodayRange(){ 
+   const start = new Date();
+   start.setHours(0, 0, 0, 0);
+
+   const end = new Date(); 
+   end.setHours(23, 59, 59, 999);
+   return {
+      start, 
+      end
+   }
+
+ }
  
+  //const  Own = await FindOwnSummary("+639950710982") 
+ const summary = await Summary("+639950710982")
+   console.log(summary.message);
+//  console.log("Column A:", Own.ListColumnA);
+//  console.log("Column E:", Own.ListColumnE);

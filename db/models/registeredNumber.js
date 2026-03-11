@@ -11,6 +11,11 @@ const RegisteredSim =sequelize.define('registered_sim', {
         type: DataTypes.STRING , 
         allowNull: false,
     }, 
+    isLeader:{
+        type: DataTypes.BOOLEAN,
+        allowNull: false, 
+        defaultValue: false,
+    }
     
 }, { 
       timestamps:true 
