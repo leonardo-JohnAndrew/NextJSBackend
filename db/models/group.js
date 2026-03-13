@@ -7,7 +7,13 @@ const Group = sequelize.define('group_list', {
         autoIncrement: true,
         primaryKey: true,
         },
+        sim_id:{
+            type: DataTypes.INTEGER,
+             unique: true,
+        }
     }, { 
         timestamp: true
     })
+    
 module.exports = Group;
+

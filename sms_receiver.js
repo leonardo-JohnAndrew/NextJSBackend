@@ -14,6 +14,7 @@ const { Extract } = require('./db/models');
 const { Op } = require('sequelize');
 const { json } = require('sequelize');
 const { arrayBuffer } = require('stream/consumers');
+const e = require('express');
 
 // list of comports to check for GSM modem, with their corresponding PINs 
 const modems = [ 
@@ -64,6 +65,7 @@ async function startModem(config) {
     const parser = port.pipe(new ReadlineParser({ delimiter: '\r\n' }));
     let waitingformessage = false; 
     let isReply = false ; 
+   
     // open 
     port.on('open', () => {
         console.log(`Serial port ${comport} opened.`);
@@ -75,7 +77,7 @@ setTimeout(() => port.write('AT+CNUM\r'), 1500);
 setTimeout(() => port.write('AT+CSCS="GSM"\r'), 1500);
 setTimeout(() => port.write('AT+CPMS="ME","ME","ME"\r'), 2000); // set message format and validity period
 setTimeout(() => port.write('AT+CNMI=2,2,0,0,0\r'), 2500)
-setTimeout(() => port.write('AT+CMGL="ALL"\r'), 3000); // read all REC UNREAD 
+//setTimeout(() => port.write('AT+CMGL="ALL"\r'), 3000); // read all REC UNREAD 
     });  
 
 // data received 
@@ -117,10 +119,11 @@ parser.on('data', async (data) => {
             //store parsed sender and datetime for use when message content arrives
             const GroupNumber = await FindGroupNumber(parsed.sender);
             group = await GroupNumber; 
-            console.log("Group No: ", group);
             return; 
         }    
     }else if(waitingformessage){
+
+    
         // console.log("Processing message content...");
          const message = data.trim();
            //if message = summary perform calculation 
@@ -134,12 +137,20 @@ parser.on('data', async (data) => {
           });
           waitingformessage = false;
           isReply = false; 
-        
               if(message.toLowerCase() === "summary") {    
                 // check if sender is leader of the group 
                  //if leader perform summary calculation and send reply  
                  //if not leader basic calculation and send reply
-                const total  = await calculateTotalCol(group);  // inserted, can be enhanced to check actual db insert result   
+                 if(group.isLeader === true){
+                    const leadSummary = await LeaderSummary(parsed.sender); 
+                    port.write(`AT+CMGS="${parsed.sender}"\r`);  // number
+                    // wait for > prompt
+                    port.write( `${leadSummary.message}` + String.fromCharCode(26));
+                    isReply = true;
+                    return; 
+                 }
+
+                const total  = await calculateTotalCol(parsed.sender);  // inserted, can be enhanced to check actual db insert result   
                  port.write(`AT+CMGS="${parsed.sender}"\r`);  // number  
                  // // wait for > prompt
                  port.write( `${total.message}` + String.fromCharCode(26));
@@ -147,8 +158,7 @@ parser.on('data', async (data) => {
                  isReply = true 
                  return; 
             }else if (parsed?.sender && parsed?.datetime_received )  {
-                  const isExtracted = await extractMessageWithDash(parsed.sender, message,group ) // 
-                 
+                  const isExtracted = await extractMessageWithDash(parsed.sender, message) // 
                   if(isExtracted.isReply === false){ 
                     return ; 
                   }
@@ -157,8 +167,7 @@ parser.on('data', async (data) => {
                   port.write( `${isExtracted.response}` + String.fromCharCode(26));
                  // CTRL+Z
                   return;       
-                  
-                  
+                                   
             } 
             console.log(`New message from ${parsed.sender}: ${message}`); 
            
@@ -171,7 +180,75 @@ port.on('error', () => {
     console.log(`Error on ${comport}, attempting to reconnect in 5 seconds...`); 
     setTimeout(() => startModem(config), 5000);
 })
-    } 
+}
+async function LeaderSummary(sender) { 
+    // perform leader summary calculation and return message
+    const findGroup = await FindGroupNumber(sender); 
+      const dateNow = new Date();
+      const formattedDate = dateNow.toLocaleDateString("en-US", {
+        year: "numeric",
+        month: "long",
+        day: "numeric",
+      }); 
+    if(findGroup.isLeader === false) return; 
+    
+    try{ 
+        const groups = await Group.findAll({ 
+            where: { group_no: findGroup.group_no,}, 
+            include: [{ 
+                model: RegisteredSim, 
+                // where: { 
+                //     contact_number: {
+                //         [Op.ne]: sender
+                //     }
+                // }, 
+                 where:{group_no: findGroup.group_no},
+                include: [{ 
+                      model: Extract ,
+                      required: false,
+                      where: {
+                        dateTimeReceived:{
+                            [Op.between]: [dateTodayRange().start, dateTodayRange().end]
+                        }
+                    }
+                }]
+            }]
+        });
+
+      //  console.log(JSON.stringify(groups, null, 2));
+        let result = [] 
+
+        groups.forEach(group => { 
+            group.registered_sims.forEach(sim => { 
+                let totalA = 0 ;  
+                let totalE = 0; 
+                
+                sim.extracts.forEach(ex => { 
+                   totalA += ex.columnA || 0 ; 
+                   totalE += ex.columnE || 0 ; 
+                }); 
+
+                result.push({
+                    contact_number: sim.contact_number, 
+                    totalA, 
+                    totalE, 
+                    total: totalA + totalE
+                })
+            });
+        });
+      
+        if(result.length === 0) {
+            return { 
+                message: `Today Summary ${formattedDate} for Group ${findGroup.group_no} \nNo entries found for today.`
+            }
+        }
+        return { 
+            message: `Today Summary ${formattedDate} for Group ${findGroup.group_no} \n${result.map(r=> `No: ${r.contact_number}\n${r.total === 0 ?`Total: ${r.total}`:`Total: A ${r.totalA} + E ${r.totalE} = ${r.total}`} `).join('\n')}`
+        }
+    }catch(error){ 
+        console.log('Error fetching from database leader summary' , error );
+    }
+}
     //date range for today 
 function dateTodayRange() {
     const start = new Date();
@@ -182,17 +259,28 @@ function dateTodayRange() {
 }
 //find sender group functions 
 async function FindGroupNumber(sender){
+    let isLeader = false; 
     let group_no = 0; 
     try{ 
-        const GroupNumber = await RegisteredSim.findOne({
-            where: {contact_number: sender     
-             }, 
-            attributes: ['contact_number' , 'group_no']
-        }); 
-        return group_no = GroupNumber ? GroupNumber.group_no : 0 ; 
+         const GroupNumber = await RegisteredSim.findAll({
+            where: { contact_number: sender },
+            include:[{ 
+                model: Group 
+                , attributes: ['group_no']
+            }]
+        });
+
+    
+
+        return {
+             group_list : GroupNumber[0]?.group_no? GroupNumber[0].group_no : 0 ,  
+             isLeader:  GroupNumber[0]?.group_list?  true : isLeader , 
+             group_no : GroupNumber[0]?.group_list?.group_no || 0 ,
+             sim_id : GroupNumber[0]?.sim_id || 0
+        } ; 
     }catch(error){ 
         console.log("message_error: ", error); 
-        return group_no; 
+        return { group_no, isLeader }; 
     }
 }
 //insert function for unknow number 
@@ -234,51 +322,69 @@ function CMGRParser(header) {
         };
 }
  //GROUP QUERY 
- async function Grouping(numbers) {
-    let grouped = await Group.findAll({ 
-        where: { group_no: numbers},
-        include:[{
-            model:Extract, where:{ 
-                dateTimeReceived:{
-                    [Op.between]: [dateTodayRange().start, dateTodayRange().end]
+ async function FindOwnSummary(sender) {
+    const dateRange  = dateTodayRange(); 
+    try{ 
+        const summary = await RegisteredSim.findAll({ 
+            where: { contact_number: sender}, 
+            include: [{
+                model: Extract, where: {
+                    dateTimeReceived: {
+                    [Op.between]: [dateRange.start, dateRange.end]
                 }
-            }
-        }]
-     }) 
-     let groups = grouped[0]?.extracts; 
-     const ListColumnAval = [] 
-     const ListColumnEval = [] 
+                },
+                attributes: ['columnA', 'columnE']
+            }]
+        }) 
+         let extracts = summary[0]?.extracts || [];
+         let ListColumnA = []; 
+         let ListColumnE = []; 
 
-     groups.forEach((item, index) => {
-        ListColumnAval.push(item.columnA); 
-        ListColumnEval.push(item.columnE); 
-     })
-
-     return {
-        ListColumnAval, 
-        ListColumnEval
-     }
+         if(extracts.length === 0) return { ListColumnA: [0], ListColumnE: [0] };
+          extracts.forEach((count , index )=> { 
+             ListColumnA.push(count.columnA);
+             ListColumnE.push(count.columnE);
+          }) 
+         console.log("List Column A: ", ListColumnA.join(' + '));
+         console.log("List Column E: ", ListColumnE.join(' + '));
+          return{
+            ListColumnA, 
+            ListColumnE
+          }
+    }catch(error){
+        console.log('Error fetching from database own summary' , error );  
+    }
  }
     // calculate function
       //extracts table contain value_num1, value_num2, value_num3, value_num4 for the 4 parts of the message
     //calculateTotalCol can also use from the refrated.js it use the table extracteds with columnA, columnB, columnC, columnD
-async function calculateTotalCol(number){ 
+async function calculateTotalCol(sender){ 
        //declare variables 
+      const dateNow = new Date();
+      const formattedDate = dateNow.toLocaleDateString("en-US", {
+        year: "numeric",
+        month: "long",
+        day: "numeric",
+      }); 
       let columnA = 0 ; 
       let columnE= 0; 
       let total = 0 
       let message = " "   
       //find own summary 
-      let grouping = await Grouping(number);
-      let ListColumnA = grouping.ListColumnAval;
-      let ListColumnE= grouping.ListColumnEval;
+      let ownSummary  = await FindOwnSummary(sender);
+      let ListColumnA = ownSummary.ListColumnA;
+      let ListColumnE= ownSummary.ListColumnE;
 
       try {        
             columnA = ListColumnA.reduce((acc, val) => acc + val, 0); 
             columnE = ListColumnE.reduce((acc, val) => acc + val, 0);
             total =  columnA + columnE  ; 
             
-            message = `Today Summary \nTotals in Column A : ${ListColumnA.map((v, i) => `${v}`).join(' + ')} =  ${columnA} \nTotal in Column E : ${ListColumnE.map((v, i) => `${v}`).join(' + ')} =  ${columnE} \nTotal of Column A and E : ${columnA} + ${columnE} = ${total} `;  
+            if(total === 0) {
+                message = `Today Summary: ${formattedDate} \nNo entries found for today. \nPlease submit your data in the format: \nData:0-0-0-0-0\ndata:0-0-0-0-0\nDATA:0-0-0-0-0`;
+            }else { 
+                message = `Today Summary: ${formattedDate} \nTotals in Column A : ${ListColumnA.map((v, i) => `${v}`).join(' + ')} =  ${columnA} \nTotal in Column E : ${ListColumnE.map((v, i) => `${v}`).join(' + ')} =  ${columnE} \nTotal of Column A and E : ${columnA} + ${columnE} = ${total} `;  
+            }
            
       } catch (error) {
          console.log('Error fetching from database');  
@@ -290,9 +396,11 @@ async function calculateTotalCol(number){
     //extract message 
     //extracts table contain value_num1, value_num2, value_num3, value_num4 for the 4 parts of the message
     //extractNumberedMessages can also use from the refrated.js it use the table extracteds with columnA, columnB, columnC, columnD
-async function extractMessageWithDash( sender,  message, groupNumber) { 
+async function extractMessageWithDash( sender,  message) { 
     const  isReply = false; 
-     if(groupNumber === 0) { 
+    const groupNumber = await FindGroupNumber(sender);
+    //sim id 
+    if(groupNumber.sim_id === null || groupNumber.sim_id === 0) { 
            // console.log("This number is Unknown"); 
             await InsertUnknownNumber(sender ,message.trim()); 
             waitingformessage = false;
@@ -300,10 +408,10 @@ async function extractMessageWithDash( sender,  message, groupNumber) {
                 isReply 
             }; 
         }
-    let response = "";  
+     let response = "";  
      const [prefix , number ] = message.split(":");
       if(prefix.toLowerCase() !== "data"){
-          response = `Text must start in Data: , \nexample: Data:0-0-0-0-0\ndata:0-0-0-0-0\nDATA:0-0-0-0-0` 
+          response = `Text must start in Data: , \nexample: \nData:0-0-0-0-0\ndata:0-0-0-0-0\nDATA:0-0-0-0-0` 
           return { 
          isInserted: false,
          response
@@ -342,7 +450,8 @@ async function extractMessageWithDash( sender,  message, groupNumber) {
      columnList.forEach((column, index) => {
         data[column] = parseInt(parts[index]);
      });
-     data['group_no'] = groupNumber;
+    //  data['group_no'] = groupNumber.group_list;
+     data['sim_id'] = groupNumber.sim_id;
     try {
       await Extract.create(data);
       response = `DateTime Recieved: ${new Date().toLocaleString()} \nMessage: ${number}`;
@@ -499,4 +608,4 @@ io.on('connection', (socket) => {
 // setInterval(() => {
 // }, 7000); // new messages
 modems.forEach(config => startModem(config)); 
-
+ 

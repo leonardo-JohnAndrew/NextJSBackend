@@ -31,7 +31,8 @@ const Extract = sequelize.define('extract', {
     dateTimeReceived: {
         type: DataTypes.DATE,
         defaultValue: DataTypes.NOW,
-     }
+     }, 
+
 },{
     timestamps: false
 });

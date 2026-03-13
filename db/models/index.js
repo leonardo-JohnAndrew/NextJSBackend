@@ -10,6 +10,7 @@ import Extracted from "./extracted.js";
 import RegisteredSim from "./registeredNumber.js";
 import UnknownNumber from "./unknownNumber.js";
 import Group from "./group.js";
+
 // 1:m
 User.hasMany(SMS ,{
     foreignKey: { 
@@ -63,21 +64,11 @@ Group.hasMany(RegisteredSim, {
         name: "group_no" 
     }, 
 })
-Group.hasMany(Extract, { 
-    foreignKey: { 
-        name: "group_no"
-    } 
-}) 
 RegisteredSim.belongsTo(Group, { 
     foreignKey: { 
         name: "group_no"
     }
 })
-Extract.belongsTo(Group,{ 
-     foreignKey: { 
-        name: "group_no"
-    } 
-}) 
 RegisteredSim.hasMany(Extract, { 
     foreignKey: { 
         name: "sim_id"
@@ -88,6 +79,18 @@ Extract.belongsTo(RegisteredSim, {
         name: "sim_id"
     }
 })
+RegisteredSim.hasOne(Group,{ 
+    foreignKey: { 
+        name: "sim_id"
+    }
+})
+Group.belongsTo(RegisteredSim, { 
+    foreignKey: { 
+        name: "sim_id"
+    }
+})
+
+
 export {
   //  User , 
     SMS , 

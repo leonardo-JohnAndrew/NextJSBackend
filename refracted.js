@@ -185,22 +185,27 @@ async function GroupNumbers(){
 }
 
 //create function that sender find number in contact list and get his group number   
- async function FindGroupNumber(sender){ 
-   let group_no = 0; 
-   let isLeader = false; 
-   try{ 
-      const GroupNumber = await RegisteredSim.findOne({
-         where: { contact_number: sender }, 
-         attributes: ['contact_number','group_no', 'isLeader']
-      });
-     return  { group_no : GroupNumber ? GroupNumber.group_no : 0
-      ,        isLeader: GroupNumber.isLeader
-              } ; 
-   }catch(error){ 
-      console.log("message_error: ", error);   
-   }
+async function FindGroupNumber(sender){
+    let isLeader = false; 
+    let group_no = 0; 
+    try{ 
+         const GroupNumber = await RegisteredSim.findAll({
+            where: { contact_number: sender },
+            include:[{ 
+                model: Group , attributes: ['group_no']
+            }]
+        });
+        //console.log(JSON.stringify(GroupNumber, null, 2));
+   //     return
+        return {
+             group_no :  GroupNumber[0]?.group_list?.group_no || 0, 
+             isLeader:  GroupNumber[0]?.group_list?  true : isLeader
+        } 
+    }catch(error){ 
+        console.log("message_error: ", error); 
+        return { group_no, isLeader }; 
+    }
 }
-
 //insert function for unknown number 
 export  async function InsertUnknownNumber(sender, message){ 
     try{ 
@@ -223,11 +228,16 @@ export  async function InsertUnknownNumber(sender, message){
 
     try{ 
         const groups = await Group.findAll({
-            where: { group_no: 1 },
+            where: { group_no: 1, 
+            
+             },
             include: [{
                 model: RegisteredSim, 
                 include:[{
-                    model: Extract
+                    model: Extract, where: {createdAt:{
+                  [Op.between]: [dateTodayRange().start, dateTodayRange().end]
+               }
+            }
                 }]
             }]
         });
@@ -239,20 +249,16 @@ export  async function InsertUnknownNumber(sender, message){
 
         groups.forEach(group => {
             group.registered_sims.forEach(sim => {
-
                 let total1 = 0;
                 let total2 = 0;
-
                 sim.extracts.forEach(ex => {
                     total1 += ex.columnA || 0;
                     total2 += ex.columnE || 0;
-                });
-
+                });  
                 result.push({
                     sim_number : sim.contact_number,
                     total: total1 + total2
                 });
-
             });
         });
 
@@ -270,12 +276,13 @@ export  async function InsertUnknownNumber(sender, message){
     try{
         const summary = await RegisteredSim.findAll({
           where: { 'contact_number': sender , 
-           createdAt: {
-              [Op.between]: [dateRange.start, dateRange.end]
-           }
           },
           include: [{
-            model: Extract,
+            model: Extract, where: {
+               createdAt: {
+              [Op.between]: [dateRange.start, dateRange.end]
+           }
+            }, 
             attributes: ['columnA', 'columnE']
           }]
         })
@@ -309,9 +316,17 @@ export  async function InsertUnknownNumber(sender, message){
    }
 
  }
- 
-  //const  Own = await FindOwnSummary("+639950710982") 
- const summary = await Summary("+639950710982")
-   console.log(summary.message);
+ //const summary = await FindGroupNumber("+639053168644"); 
+ //console.log("Group Number: ", summary.group_no);
+ //console.log("Is Leader: ", summary.isLeader);
 //  console.log("Column A:", Own.ListColumnA);
 //  console.log("Column E:", Own.ListColumnE);
+//must console Jan 4 2024   
+const date = new Date(); 
+console.log(
+  date.toLocaleDateString("en-US", {
+    year: "numeric",
+    month: "long",
+    day: "numeric",
+  })
+);
