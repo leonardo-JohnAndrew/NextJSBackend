@@ -54,6 +54,7 @@ const io = new Server(server, {
 async function startModem(config) {
     const {port: comport ,  pin} = config;
     let group; 
+    let isLeader = false; 
     let parsed = {}; 
    // const contact  = await findSimNum(80); 
    // console.log(JSON.stringify(contact))  
@@ -117,46 +118,48 @@ parser.on('data', async (data) => {
             };
             parsed = result;
             //store parsed sender and datetime for use when message content arrives
-            const GroupNumber = await FindGroupNumber(parsed.sender);
-            group = await GroupNumber; 
             return; 
         }    
     }else if(waitingformessage){
-
-    
+        const GroupNumber = await FindGroupNumber(parsed.sender);
+        group = await GroupNumber; 
+        isLeader =  group.isLeader;
+        
         // console.log("Processing message content...");
-         const message = data.trim();
-           //if message = summary perform calculation 
-         
-          if (!message || message.toUpperCase() === 'OK') return;
-           
-               await insertSMS(parsed.sender, message, parsed.datetime_received, comport);
-               io.emit('new_sms', {
-                   sender: parsed.sender,
-                   message
-          });
-          waitingformessage = false;
-          isReply = false; 
+        const message = data.trim();
+        //if message = summary perform calculation 
+        
+        if (!message || message.toUpperCase() === 'OK') return;
+        
+        //    await insertSMS(parsed.sender, message, parsed.datetime_received, comport);
+        io.emit('new_sms', {
+            sender: parsed.sender,
+            message
+        });
+        waitingformessage = false;
+        isReply = false; 
+        console.log(`Parsed sender: ${parsed.sender} is a Leade: ${isLeader}`);
               if(message.toLowerCase() === "summary") {    
                 // check if sender is leader of the group 
                  //if leader perform summary calculation and send reply  
                  //if not leader basic calculation and send reply
-                 if(group.isLeader === true){
+                 if(isLeader === true){
                     const leadSummary = await LeaderSummary(parsed.sender); 
                     port.write(`AT+CMGS="${parsed.sender}"\r`);  // number
                     // wait for > prompt
                     port.write( `${leadSummary.message}` + String.fromCharCode(26));
                     isReply = true;
+      
                     return; 
-                 }
-
-                const total  = await calculateTotalCol(parsed.sender);  // inserted, can be enhanced to check actual db insert result   
-                 port.write(`AT+CMGS="${parsed.sender}"\r`);  // number  
-                 // // wait for > prompt
-                 port.write( `${total.message}` + String.fromCharCode(26));
-                 // CTRL+Z
-                 isReply = true 
-                 return; 
+                 }  else {
+                     const total  = await calculateTotalCol(parsed.sender);  // inserted, can be enhanced to check actual db insert result   
+                     port.write(`AT+CMGS="${parsed.sender}"\r`);  // number  
+                     // // wait for > prompt
+                     port.write( `${total.message}` + String.fromCharCode(26));
+                     // CTRL+Z
+                     isReply = true 
+                     return; 
+                    }
             }else if (parsed?.sender && parsed?.datetime_received )  {
                   const isExtracted = await extractMessageWithDash(parsed.sender, message) // 
                   if(isExtracted.isReply === false){ 
@@ -201,8 +204,12 @@ async function LeaderSummary(sender) {
                 //     contact_number: {
                 //         [Op.ne]: sender
                 //     }
-                // }, 
-                 where:{group_no: findGroup.group_no},
+                // },  use if you want to exclude leader from summary 
+                where:{group_no: findGroup.group_no},
+                separate: true, 
+                order: [
+                    [sequelize.literal(`contact_number = '${sender}'`), 'DESC']
+                ], 
                 include: [{ 
                       model: Extract ,
                       required: false,
@@ -211,7 +218,8 @@ async function LeaderSummary(sender) {
                             [Op.between]: [dateTodayRange().start, dateTodayRange().end]
                         }
                     }
-                }]
+                }],
+                
             }]
         });
 
@@ -219,7 +227,7 @@ async function LeaderSummary(sender) {
         let result = [] 
 
         groups.forEach(group => { 
-            group.registered_sims.forEach(sim => { 
+            group.registered_sims.forEach(sim => { //sim {[],[]}
                 let totalA = 0 ;  
                 let totalE = 0; 
                 
@@ -269,8 +277,6 @@ async function FindGroupNumber(sender){
                 , attributes: ['group_no']
             }]
         });
-
-    
 
         return {
              group_list : GroupNumber[0]?.group_no? GroupNumber[0].group_no : 0 ,  
@@ -427,7 +433,6 @@ async function extractMessageWithDash( sender,  message) {
          response
       };  
      }
-
      const columnList = ["columnA", "columnB", "columnC", "columnD", "columnE"]; 
      const parts = number.split('-'); 
      console.log("Extracted parts: ", parts);
@@ -487,8 +492,6 @@ async function extractMessageWithDash( sender,  message) {
     //insert function get sms read from modem and insert to db 
     
 async function insertSMS(sender, content, datetime_received , comportNumber) { // sender number and message content 
-        
-        
         try {
             const newSMS = await SMS.create({
                 sender: sender,
@@ -506,7 +509,6 @@ async function insertSMS(sender, content, datetime_received , comportNumber) { /
 }
     //initialize modems register comport number and contact number in db for reference
 async function RegisterModemNumbers(modemNumbers, contactNumbers) {
-        
         try{ 
             // find pk  
             const existing = await Comport.findByPk(modemNumbers, {
@@ -526,8 +528,6 @@ async function RegisterModemNumbers(modemNumbers, contactNumbers) {
                         port_number: modemNumbers,
                         contact_number: contactNumbers 
                     });  
-    
-                    
                     console.log('Registered modem number:', regsistereMode);
                 }
          }catch(error){

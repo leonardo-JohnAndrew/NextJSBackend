@@ -8,7 +8,8 @@ const RegisteredSim =sequelize.define('registered_sim', {
         primaryKey: true, 
     }, 
     contact_number: { 
-        type: DataTypes.STRING , 
+        type: DataTypes.STRING ,
+        unique: true, 
         allowNull: false,
     }, 
     
