@@ -1,13 +1,15 @@
 const { DataTypes } = require("sequelize");
 const sequelize = require("../connection"); 
 
-
-
 const Purchase = sequelize.define('purchase', { 
      PurchaseID: { 
         type : DataTypes.STRING, 
         allowNull: true, 
         primaryKey : true, 
+    }, 
+     RequestorRole: { 
+        type: DataTypes.STRING, 
+        allowNull: true,
     }, 
     EmployeeSign:{ 
         type: DataTypes.STRING, 

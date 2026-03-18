@@ -27,7 +27,34 @@ export default function RootLayout({
       <body
         className={`${geistSans.variable} ${geistMono.variable} antialiased`}
       >
-        {children}
+        <div className="flex min-h-screen">
+          
+
+          <aside className="min-w-54 bg-red-900 text-white flex flex-col p-4">
+            <h1 className="text-xl font-bold mb-6">My App</h1>
+
+            <nav className="flex flex-col gap-2">
+              <a href="/" className="hover:bg-darkRed p-2 rounded">
+                Dashboard
+              </a>
+              <a href="/Purchase" className="hover:bg-red-400 p-2 rounded">
+                Purchase
+              </a>
+              <a href="/Inventory" className="hover:bg-red-400 p-2 rounded">
+                None
+              </a>
+              <a href="/Reports" className="hover:bg-red-400 p-2 rounded">
+                None
+              </a>
+            </nav>
+          </aside>
+
+       
+          <main className="flex-1 bg-gray-100 p-6">
+            {children}
+          </main>
+
+        </div>
       </body>
     </html>
   );

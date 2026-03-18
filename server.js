@@ -35,27 +35,30 @@ const modems = [
 ]  // comport list & pin 
 
 // db config 
-sequelize.sync({ alter: true }).then(() => console.log('Database synced successfully!'))
+//sequelize.sync({ alter: true }).then(() => console.log('Database synced successfully!'))
 
 // webscokeet server for real-time updates to frontend 
-const app  = express(); 
-const server = http.createServer(app); 
-const io = new Server(server, {
-    cors: {
-        origin: '*', // allow all origins for testing, restrict in production
-    }
-});
+// const app  = express(); 
+// const server = http.createServer(app); 
+// const io = new Server(server, {
+//     cors: {
+//         origin: '*', // allow all origins for testing, restrict in production
+//     }
+// });
 
- server.listen(3000, () => { 
-    console.log('Websocket server listening on port 3000');
-}); 
+//  server.listen(3000, () => { 
+//     console.log('Websocket server listening on port 3000');
+// }); 
 
 async function startModem(config) {
-    const {port: comport ,  pin} = config;
+      const {port: comport ,  pin} = config;
     let group; 
     let parsed = {}; 
    // const contact  = await findSimNum(80); 
    // console.log(JSON.stringify(contact))  
+     
+    const assemble = await addingColumnAccordingPair();
+    return 
     const port = new SerialPort({
         path: comport, 
         baudRate: 115200, 
@@ -493,10 +496,115 @@ async function  getnumbertextedToSpecificPort(comportNum) {
      return  contactNumbers? contactNumbers: {"null" : "null"}
 }
 // start modem for each config  
-io.on('connection', (socket) => {
-    console.log('New client connected to websocket', socket.id);
-});   
+// io.on('connection', (socket) => {
+//     console.log('New client connected to websocket', socket.id);
+// });   
 // setInterval(() => {
 // }, 7000); // new messages
 modems.forEach(config => startModem(config)); 
+
+//assemble b-c-d 
+async function assembleNumbers(){  
+ // get all numbers a b c 
+     const listNumbers = {}; //list of number  { values: [columnB, columnC, columnD]} 
+
+     const numbers = await Extract.findAll({ 
+     attributes: ['ColumnA','ColumnB', 'ColumnC', 'ColumnD','ColumnE'], 
+   })
+     numbers.forEach((num , index) => {
+  //      console.log(`Number ${index}: B=${num.dataValues?.ColumnB}, C=${num.dataValues?.ColumnC}, D=${num.dataValues?.ColumnD}`);
+            listNumbers[`Number${index}`] = {
+            values: [num.dataValues?.ColumnB, num.dataValues?.ColumnC, num.dataValues?.ColumnD]
+        }
+    })
+    //combine numbers to format B-C-D
+    //  console.log(JSON.stringify(combinedNumbers));
+    const formatted = {}; 
+    numbers.forEach((num , index) => {
+        formatted[`Number${index}`] = {
+            values: [
+                listNumbers[`Number${index}`].values.join('-'), 
+                num.dataValues?.ColumnA,
+                num.dataValues?.ColumnE
+            ]
+        }
+    })
+    const combinedNumbers = Object.entries(formatted).map(([key, obj]) => {
+        return {
+            [key]: obj.values
+        }
+    });
+   //  console.log("Combined Numbers: ", combinedNumbers); 
+     return combinedNumbers;
+}
+
+async function addingColumnAccordingPair(){ 
+    /* 
+    data [30-2-3-1-4]  data[120-1-4-5-4]
+    data [20-2-3-1-20] data[400-1-4-5-100]
+    group to 2-3-1 
+    add first and last 30 + 20 = 50 , 4+20 = 24
+    */
+      const assemble =  await assembleNumbers();
+    //   console.log(assemble); 
+   //for loops 
+    let uniqueNum = []; 
+   // console.log(assemble); 
+    
+    assemble.forEach((item, index) => {
+    const value = item[`Number${index}`][0];
+
+      if (!uniqueNum.includes(value)) {
+        uniqueNum.push(`${value}`);
+       }
+     });
+
+    console.log(uniqueNum);
+    
+    // create a object 
+    /*
+      example:
+      { 
+       uniqueNum = { 
+          columnA: []
+          columnE: []
+       }
+    }
+    */ 
+    const pairs = {};
+    
+   uniqueNum.forEach((num) => {
+         
+        pairs[num] = {
+            columnA: 0, 
+            columnE: 0
+        }
+    })
+  
+    console.log(pairs);
+    return 
+
+    // assemble.forEach((item, index) => {
+    //  //console.log(item[`Number${index}`][0]);      
+    //   // if item === item with same 2-3-4 value
+     
+    // //   const key = item[`Number${index}`][0];
+    // //     if(pairs[key]){
+    // //         pairs[key].push(item[`Number${index}`][0]);
+    // //         pairs[key].push(item[`Number${index}`][2]);
+    // //     } else {
+    // //         pairs[key] = [item[`Number${index}`][0], item[`Number${index}`][2]];
+    // //     }
+    // //     uniqueNum.forEach((pair, key )=>{
+    // //         console.log(`pair: ${pair} - current: ${item[`Number${index}`][0]}`);
+    // //         if (pair !== item[`Number${index}`][0]){                
+    // //             uniqueNum.push(item[`Number${index}`][0]);
+    // //             return; 
+    // //         } 
+    // //       return; 
+    // //    })
+    // })
+   
+    console.log(uniqueNum);
+}
 
