@@ -31,14 +31,13 @@ const modems = [
     // {port: 'COM13', pin: ""},
     // {port: 'COM14', pin: ""},
     // {port: 'COM16', pin: ""},
-    {port: 'COM17', pin: ""},
+  //  {port: 'COM17', pin: ""},
     // {port: 'COM18', pin: ""}, 
 ]  // comport list & pin 
 
 // db config 
-sequelize.sync({ alter: true }).then(() => console.log('Database synced successfully!'))
-
-// webscokeet server for real-time updates to frontend 
+//sequelize.sync({ alter: true }).then(() => console.log('Database synced successfully!'))
+// websockeet server for real-time updates to frontend 
 const app  = express(); 
 const server = http.createServer(app); 
 const io = new Server(server, {
@@ -63,6 +62,7 @@ async function startModem(config) {
         baudRate: 115200, 
         incomingSMSIndication: true 
     });
+ 
     const parser = port.pipe(new ReadlineParser({ delimiter: '\r\n' }));
     let waitingformessage = false; 
     let isReply = false ; 
@@ -124,18 +124,13 @@ parser.on('data', async (data) => {
         const GroupNumber = await FindGroupNumber(parsed.sender);
         group = await GroupNumber; 
         isLeader =  group.isLeader;
-        
-        // console.log("Processing message content...");
+
         const message = data.trim();
         //if message = summary perform calculation 
         
         if (!message || message.toUpperCase() === 'OK') return;
         
         //    await insertSMS(parsed.sender, message, parsed.datetime_received, comport);
-        io.emit('new_sms', {
-            sender: parsed.sender,
-            message
-        });
         waitingformessage = false;
         isReply = false; 
         console.log(`Parsed sender: ${parsed.sender} is a Leade: ${isLeader}`);
@@ -149,9 +144,9 @@ parser.on('data', async (data) => {
                     // wait for > prompt
                     port.write( `${leadSummary.message}` + String.fromCharCode(26));
                     isReply = true;
-      
-                    return; 
-                 }  else {
+                    return;
+
+                 }else {
                      const total  = await calculateTotalCol(parsed.sender);  // inserted, can be enhanced to check actual db insert result   
                      port.write(`AT+CMGS="${parsed.sender}"\r`);  // number  
                      // // wait for > prompt
@@ -194,7 +189,6 @@ async function LeaderSummary(sender) {
         day: "numeric",
       }); 
     if(findGroup.isLeader === false) return; 
-    
     try{ 
         const groups = await Group.findAll({ 
             where: { group_no: findGroup.group_no,}, 
@@ -364,7 +358,7 @@ function CMGRParser(header) {
     // calculate function
       //extracts table contain value_num1, value_num2, value_num3, value_num4 for the 4 parts of the message
     //calculateTotalCol can also use from the refrated.js it use the table extracteds with columnA, columnB, columnC, columnD
-async function calculateTotalCol(sender){ 
+async function calculateTotalCol(sender , objects ={}){ 
        //declare variables 
       const dateNow = new Date();
       const formattedDate = dateNow.toLocaleDateString("en-US", {
@@ -376,11 +370,17 @@ async function calculateTotalCol(sender){
       let columnE= 0; 
       let total = 0 
       let message = " "   
+      let arrayValue = {}; 
       //find own summary 
-      let ownSummary  = await FindOwnSummary(sender);
-      let ListColumnA = ownSummary.ListColumnA;
-      let ListColumnE= ownSummary.ListColumnE;
-
+      if(!sender){
+        arrayValue = objects;
+      }else{ 
+          arrayValue  = await FindOwnSummary(sender);
+      }
+    //    console.log("Array Value: ", arrayValue);
+    //   return 
+      let ListColumnA = arrayValue.ListColumnA;
+      let ListColumnE= arrayValue.ListColumnE;
       try {        
             columnA = ListColumnA.reduce((acc, val) => acc + val, 0); 
             columnE = ListColumnE.reduce((acc, val) => acc + val, 0);
@@ -396,7 +396,9 @@ async function calculateTotalCol(sender){
          console.log('Error fetching from database');  
       }  
       return {
-        message
+        message, 
+        columnA,
+        columnE
       }; 
 } 
     //extract message 
@@ -609,3 +611,100 @@ io.on('connection', (socket) => {
 // }, 7000); // new messages
 modems.forEach(config => startModem(config)); 
  
+async function assembleNumbers(){  
+ // get all numbers a b c 
+     const listNumbers = {}; //list of number  { values: [columnB, columnC, columnD]} 
+
+     try{
+
+         const numbers = await Extract.findAll({ 
+             attributes: ['ColumnA','ColumnB', 'ColumnC', 'ColumnD','ColumnE'], 
+            })
+            numbers.forEach((num , index) => {
+                //      console.log(`Number ${index}: B=${num.dataValues?.ColumnB}, C=${num.dataValues?.ColumnC}, D=${num.dataValues?.ColumnD}`);
+                listNumbers[`Number${index}`] = {
+                    values: [num.dataValues?.ColumnB, num.dataValues?.ColumnC, num.dataValues?.ColumnD]
+                }
+            })
+            //combine numbers to format B-C-D
+            //  console.log(JSON.stringify(combinedNumbers));
+            const formatted = {}; 
+            numbers.forEach((num , index) => {
+                formatted[`Number${index}`] = {
+                    values: [
+                        listNumbers[`Number${index}`].values.join('-'), 
+                        num.dataValues?.ColumnA,
+                        num.dataValues?.ColumnE
+                    ]
+                }
+            })
+            const combinedNumbers = Object.entries(formatted).map(([key, obj]) => {
+                return {
+                    [key]: obj.values
+                }
+            });
+            //  console.log("Combined Numbers: ", combinedNumbers); 
+            return combinedNumbers;
+        }catch(error){
+            console.log('Error fetching from database');  
+            return; 
+        }
+}
+async function addingColumnAccordingPair(){ 
+    /* 
+    data [30-2-3-1-4]  data[120-1-4-5-4]
+    data [20-2-3-1-20] data[400-1-4-5-100]
+    group to 2-3-1 
+    add first and last 30 + 20 = 50 , 4+20 = 24
+    */
+      const assemble =  await assembleNumbers();
+   //console.log(assemble); 
+   //for loops 
+    let uniqueNum = []; 
+   // console.log(assemble); 
+     const missingFields = {};
+    assemble.forEach((item, index) => {
+    const value = item[`Number${index}`][0];
+   //     console.log(item);
+      if (!uniqueNum.includes(value)) {
+        uniqueNum.push(`${value}`);
+       }
+     });
+   const pairs = {} ;  
+  assemble.forEach((item, index) => {
+    const value = item[`Number${index}`][0];
+    const columnA = item[`Number${index}`][1];
+    const columnE = item[`Number${index}`][2];
+   
+     // if uniqueNum ==== value push columnA and columnE to pairs[value]
+     // if double value of uniqueNum === value push columnA and columnE to pairs[value] and add to existing value in pairs[value]
+    if (!pairs[value]) {
+        pairs[value] = {
+            ColumnA: [columnA],
+            ColumnE: [columnE]
+        }
+    }
+    else {
+    
+        pairs[value].ColumnA.push(columnA);
+        pairs[value].ColumnE.push(columnE);
+    }
+    
+  });
+  
+   //sum all columnA and columnE in pairs 
+   Object.keys(pairs).forEach(async key => {
+       let ListColumnA = []; 
+     let ListColumnE = []; 
+    
+    ListColumnA = pairs[key].ColumnA
+    ListColumnE = pairs[key].ColumnE
+    const collectedNumbers = { 
+        ListColumnA,
+        ListColumnE
+    }   
+   
+     const cal =  await calculateTotalCol(null,collectedNumbers ); 
+    console.log(`${key}: ColumnA: ${cal.columnA} \nColumnE: ${cal.columnE}`);
+}) 
+}

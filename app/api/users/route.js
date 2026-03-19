@@ -26,7 +26,7 @@ export async function POST(request) {
  secure: process.env.NODE_ENV === "development", 
 sameSite: "strict", 
 path:"/" , 
-maxAge: 60*5
+maxAge: 60*5,
  }); 
 
   return Response.json({ message: "Login successful" });

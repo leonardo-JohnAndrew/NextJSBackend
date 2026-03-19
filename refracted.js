@@ -4,7 +4,7 @@ import {Op} from 'sequelize'
 import e from "express";
 import { register } from "module";
 import { read } from "fs";
-sequelize.sync({ alter: true }).then(() => console.log('Database synced')); 
+//sequelize.sync({ alter: true }).then(() => console.log('Database synced')); 
 
 
 
@@ -55,47 +55,42 @@ sequelize.sync({ alter: true }).then(() => console.log('Database synced'));
  }
 
 }
- export async  function calculateTotalCol(){ 
+async function calculateTotalCol(number, objects={}){ 
        //declare variables 
       let columnA = 0 ; 
-      let columnE = 0; 
+      let columnE= 0; 
       let total = 0 
-      let message = " "   
-      let ListColumnA = []
-      let ListColumnD = []
-       //get the total from database 
-
-      try { 
-           const ListColumnAval = await Extracted.findAll({
-            attributes: ['columnA']
-           });
-           const ListColumnDval = await Extracted.findAll({
-            attributes: ['columnD']
-           }); 
-            // list all in ListColumnA and ListColumnD 
-              ListColumnAval.forEach((item, index) => {
-                ListColumnA.push(item.columnA); 
-                });
-                ListColumnDval.forEach((item, index) => {
-                    ListColumnD.push(item.columnD);
-                });
-           columnA = await Extracted.sum("columnA"); 
-           columnD = await Extracted.sum("columnD"); 
-           total =  columnA + columnD  ; 
-            
-          message = `Today Summary \nTotals in Column A : ${ListColumnA.map((v, i) => `${v}`).join(' + ')} =  ${columnA} \nTotal in Column D : ${ListColumnD.map((v, i) => `${v}`).join(' + ')} =  ${columnD} \nTotal of Column A and D : ${columnA} + ${columnD} = ${total} `;  
-           
-        //    console.log(`column A:  ${columnA} , column D: ${columnD} , Total: ${total}` ); 
-      } catch (error) {
-         console.log('Error fetching from database'); 
+      let message = " " 
+      let arrayValue = {};  
+      //find own summary 
+      if(!number){ 
+        console.log("Calculating by bcd");
+          arrayValue = objects;  
+          //console.log("Assembled Numbers: ", arrayValue);    
+      }else{ 
+          console.log(`Calculating summary for group number ${number}...`);
+          arrayValue = await Grouping(number); 
       } 
+      console.log("Array Value: ", arrayValue); 
+      let ListColumnA = arrayValue.ListColumnAval;
+      let ListColumnE= arrayValue.ListColumnEval;
+
+   //   console.log(`ListColumnA: ${JSON.stringify(ListColumnA[0])} \n ListColumnE: ${JSON.stringify(ListColumnE[0])}`);
+     //  return 
+      try {        
+            columnA = ListColumnA.reduce((acc, val) => acc + val, 0); 
+            columnE = ListColumnE.reduce((acc, val) => acc + val, 0);
+            total =  columnA + columnE  ; 
+            
+            message = `Today Summary \nTotals in Column A : ${ListColumnA.map((v, i) => `${v}`).join(' + ')} =  ${columnA} \nTotal in Column E : ${ListColumnE.map((v, i) => `${v}`).join(' + ')} =  ${columnE} \nTotal of Column A and E : ${columnA} + ${columnE} = ${total} `;  
+           
+      } catch (error) {
+         console.log('Error fetching from database');  
+      }  
       return {
-        columnA, 
-        columnD, 
-        total, 
-        ListColumnA, 
-        ListColumnD,
-        message
+        message, 
+        columnA,
+        columnE
       }; 
 } 
 export async function RegisterNumber(modemNumber, contactNum){ 
@@ -322,11 +317,100 @@ export  async function InsertUnknownNumber(sender, message){
 //  console.log("Column A:", Own.ListColumnA);
 //  console.log("Column E:", Own.ListColumnE);
 //must console Jan 4 2024   
-const date = new Date(); 
-console.log(
-  date.toLocaleDateString("en-US", {
-    year: "numeric",
-    month: "long",
-    day: "numeric",
-  })
-);
+
+export async function assembleNumbers(){  
+ // get all numbers a b c 
+     const listNumbers = {}; //list of number  { values: [columnB, columnC, columnD]} 
+       try{
+
+          const numbers = await Extract.findAll({ 
+             attributes: ['ColumnA','ColumnB', 'ColumnC', 'ColumnD','ColumnE'], 
+   })
+   numbers.forEach((num , index) => {
+  //      console.log(`Number ${index}: B=${num.dataValues?.ColumnB}, C=${num.dataValues?.ColumnC}, D=${num.dataValues?.ColumnD}`);
+            listNumbers[`Number${index}`] = {
+               values: [num.dataValues?.ColumnB, num.dataValues?.ColumnC, num.dataValues?.ColumnD]
+            }
+         })
+         //combine numbers to format B-C-D
+         //  console.log(JSON.stringify(combinedNumbers));
+         const formatted = {}; 
+         numbers.forEach((num , index) => {
+            formatted[`Number${index}`] = {
+               values: [
+                  listNumbers[`Number${index}`].values.join('-'), 
+                  num.dataValues?.ColumnA,
+                  num.dataValues?.ColumnE
+               ]
+            }
+         })
+         const combinedNumbers = Object.entries(formatted).map(([key, obj]) => {
+            return {
+               [key]: obj.values
+            }
+         });
+         //  console.log("Combined Numbers: ", combinedNumbers); 
+         return combinedNumbers;
+      }catch(error){
+        console.log('Error fetching from database');
+        return;
+      }
+}
+
+export async function addingColumnAccordingPair(){ 
+    /* 
+    data [30-2-3-1-4]  data[120-1-4-5-4]
+    data [20-2-3-1-20] data[400-1-4-5-100]
+    group to 2-3-1 
+    add first and last 30 + 20 = 50 , 4+20 = 24
+    */
+      const assemble =  await assembleNumbers();
+   //console.log(assemble); 
+   //for loops 
+    let uniqueNum = []; 
+   // console.log(assemble); 
+     const missingFields = {};
+    assemble.forEach((item, index) => {
+    const value = item[`Number${index}`][0];
+   //     console.log(item);
+      if (!uniqueNum.includes(value)) {
+        uniqueNum.push(`${value}`);
+       }
+     });
+   const pairs = {} ;  
+  assemble.forEach((item, index) => {
+    const value = item[`Number${index}`][0];
+    const columnA = item[`Number${index}`][1];
+    const columnE = item[`Number${index}`][2];
+   
+     // if uniqueNum ==== value push columnA and columnE to pairs[value]
+     // if double value of uniqueNum === value push columnA and columnE to pairs[value] and add to existing value in pairs[value]
+    if (!pairs[value]) {
+        pairs[value] = {
+            ColumnA: [columnA],
+            ColumnE: [columnE]
+        }
+    }
+    else {
+    
+        pairs[value].ColumnA.push(columnA);
+        pairs[value].ColumnE.push(columnE);
+    }
+    
+  });
+  
+   //sum all columnA and columnE in pairs 
+   Object.keys(pairs).forEach(async key => {
+       let ListColumnAval = []; 
+     let ListColumnEval = []; 
+    
+    ListColumnAval = pairs[key].ColumnA
+    ListColumnEval = pairs[key].ColumnE
+    const collectedNumbers = { 
+        ListColumnAval,
+        ListColumnEval
+    }  
+     const cal =  await calculateTotalCol(null,collectedNumbers ); 
+    console.log(`${key}: ColumnA: ${cal.columnA} \nColumnE: ${cal.columnE}`);
+}) 
+}

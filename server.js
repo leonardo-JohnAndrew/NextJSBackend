@@ -11,10 +11,10 @@ const UnknownNumber = require('./db/models/unknownNumber');
 const Group = require('./db/models/group'); 
 const  sequelize = require('./db/connection');
 const { Extract } = require('./db/models');
-const { Op } = require('sequelize');
+const { Op, col } = require('sequelize');
 const { json } = require('sequelize');
 const { arrayBuffer } = require('stream/consumers');
-
+const {helloWorld} = require('./refracted');
 // list of comports to check for GSM modem, with their corresponding PINs 
 const modems = [ 
     // {port: 'COM3', pin: ""},
@@ -30,7 +30,7 @@ const modems = [
     // {port: 'COM13', pin: ""},
     // {port: 'COM14', pin: ""},
     // {port: 'COM16', pin: ""},
-    {port: 'COM17', pin: ""},
+   // {port: 'COM17', pin: ""},
     // {port: 'COM18', pin: ""}, 
 ]  // comport list & pin 
 
@@ -54,10 +54,11 @@ async function startModem(config) {
       const {port: comport ,  pin} = config;
     let group; 
     let parsed = {}; 
-   // const contact  = await findSimNum(80); 
-   // console.log(JSON.stringify(contact))  
+//    const contact  = await findSimNum(80); 
+//    console.log(JSON.stringify(contact))  
      
-    const assemble = await addingColumnAccordingPair();
+   const assemble = await addingColumnAccordingPair('980', '1-7-1', '950');
+    //console.log("Assembled Numbers: ", assemble);
     return 
     const port = new SerialPort({
         path: comport, 
@@ -265,17 +266,28 @@ function CMGRParser(header) {
     // calculate function
       //extracts table contain value_num1, value_num2, value_num3, value_num4 for the 4 parts of the message
     //calculateTotalCol can also use from the refrated.js it use the table extracteds with columnA, columnB, columnC, columnD
-async function calculateTotalCol(number){ 
+async function calculateTotalCol(number, objects={}){ 
        //declare variables 
       let columnA = 0 ; 
       let columnE= 0; 
       let total = 0 
-      let message = " "   
+      let message = " " 
+      let arrayValue = {};  
       //find own summary 
-      let grouping = await Grouping(number);
-      let ListColumnA = grouping.ListColumnAval;
-      let ListColumnE= grouping.ListColumnEval;
+      if(!number){ 
+        console.log("Calculating by bcd");
+          arrayValue = objects;  
+          //console.log("Assembled Numbers: ", arrayValue);    
+      }else{ 
+          console.log(`Calculating summary for group number ${number}...`);
+          arrayValue = await Grouping(number); 
+      } 
+   //    console.log("Array Value: ", arrayValue); 
+      let ListColumnA = arrayValue.ListColumnAval;
+      let ListColumnE= arrayValue.ListColumnEval;
 
+   //   console.log(`ListColumnA: ${JSON.stringify(ListColumnA[0])} \n ListColumnE: ${JSON.stringify(ListColumnE[0])}`);
+     //  return 
       try {        
             columnA = ListColumnA.reduce((acc, val) => acc + val, 0); 
             columnE = ListColumnE.reduce((acc, val) => acc + val, 0);
@@ -287,7 +299,9 @@ async function calculateTotalCol(number){
          console.log('Error fetching from database');  
       }  
       return {
-        message
+        message, 
+        columnA,
+        columnE
       }; 
 } 
     //extract message 
@@ -507,15 +521,16 @@ modems.forEach(config => startModem(config));
 async function assembleNumbers(){  
  // get all numbers a b c 
      const listNumbers = {}; //list of number  { values: [columnB, columnC, columnD]} 
-
-     const numbers = await Extract.findAll({ 
-     attributes: ['ColumnA','ColumnB', 'ColumnC', 'ColumnD','ColumnE'], 
-   })
-     numbers.forEach((num , index) => {
-  //      console.log(`Number ${index}: B=${num.dataValues?.ColumnB}, C=${num.dataValues?.ColumnC}, D=${num.dataValues?.ColumnD}`);
-            listNumbers[`Number${index}`] = {
-            values: [num.dataValues?.ColumnB, num.dataValues?.ColumnC, num.dataValues?.ColumnD]
-        }
+ 
+     try{ 
+         const numbers = await Extract.findAll({ 
+         attributes: ['ColumnA','ColumnB', 'ColumnC', 'ColumnD','ColumnE'], 
+       })
+       numbers.forEach((num , index) => {
+           //      console.log(`Number ${index}: B=${num.dataValues?.ColumnB}, C=${num.dataValues?.ColumnC}, D=${num.dataValues?.ColumnD}`);
+           listNumbers[`Number${index}`] = {
+               values: [num.dataValues?.ColumnB, num.dataValues?.ColumnC, num.dataValues?.ColumnD]
+            }
     })
     //combine numbers to format B-C-D
     //  console.log(JSON.stringify(combinedNumbers));
@@ -534,77 +549,119 @@ async function assembleNumbers(){
             [key]: obj.values
         }
     });
-   //  console.log("Combined Numbers: ", combinedNumbers); 
-     return combinedNumbers;
+     // console.log("Combined Numbers: ", combinedNumbers); 
+    return combinedNumbers; 
+
+}catch(error){
+       console.log('Error fetching from database');
+       return; 
+}
 }
 
-async function addingColumnAccordingPair(){ 
+async function addingColumnAccordingPair(valueA ,valueB_D , valueE){ 
     /* 
     data [30-2-3-1-4]  data[120-1-4-5-4]
     data [20-2-3-1-20] data[400-1-4-5-100]
     group to 2-3-1 
     add first and last 30 + 20 = 50 , 4+20 = 24
     */
+    let islimit = false;
       const assemble =  await assembleNumbers();
-    //   console.log(assemble); 
+   //console.log(assemble); 
    //for loops 
     let uniqueNum = []; 
    // console.log(assemble); 
-    
+     const missingFields = {};
     assemble.forEach((item, index) => {
     const value = item[`Number${index}`][0];
-
+   //     console.log(item);
       if (!uniqueNum.includes(value)) {
         uniqueNum.push(`${value}`);
        }
      });
-
-    console.log(uniqueNum);
-    
-    // create a object 
-    /*
-      example:
-      { 
-       uniqueNum = { 
-          columnA: []
-          columnE: []
-       }
-    }
-    */ 
-    const pairs = {};
-    
-   uniqueNum.forEach((num) => {
-         
-        pairs[num] = {
-            columnA: 0, 
-            columnE: 0
-        }
-    })
-  
-    console.log(pairs);
-    return 
-
-    // assemble.forEach((item, index) => {
-    //  //console.log(item[`Number${index}`][0]);      
-    //   // if item === item with same 2-3-4 value
-     
-    // //   const key = item[`Number${index}`][0];
-    // //     if(pairs[key]){
-    // //         pairs[key].push(item[`Number${index}`][0]);
-    // //         pairs[key].push(item[`Number${index}`][2]);
-    // //     } else {
-    // //         pairs[key] = [item[`Number${index}`][0], item[`Number${index}`][2]];
-    // //     }
-    // //     uniqueNum.forEach((pair, key )=>{
-    // //         console.log(`pair: ${pair} - current: ${item[`Number${index}`][0]}`);
-    // //         if (pair !== item[`Number${index}`][0]){                
-    // //             uniqueNum.push(item[`Number${index}`][0]);
-    // //             return; 
-    // //         } 
-    // //       return; 
-    // //    })
-    // })
+    const pairs = {} ;  
+    assemble.forEach((item, index) => {
+    const value = item[`Number${index}`][0];
+    const columnA = item[`Number${index}`][1];
+    const columnE = item[`Number${index}`][2];
    
-    console.log(uniqueNum);
-}
+     // if uniqueNum ==== value push columnA and columnE to pairs[value]
+     // if double value of uniqueNum === value push columnA and columnE to pairs[value] and add to existing value in pairs[value]
+    if (!pairs[value]) {
+        pairs[value] = {
+            ColumnA: [columnA],
+            ColumnE: [columnE]
+        }
+    }
+    else {
+    
+        pairs[value].ColumnA.push(columnA);
+        pairs[value].ColumnE.push(columnE);
+    }
+    
+  });
+  
+   //sum all columnA and columnE in pairs 
+      
+     let ListColumnAval = []; 
+     let ListColumnEval = []; 
+   
+     ListColumnAval = pairs[valueB_D].ColumnA
+     ListColumnEval = pairs[valueB_D].ColumnE
+     const collectedNumbers = { 
+       ListColumnAval,
+       ListColumnEval
+   }  
+   let message = []; 
+   const cal =  await calculateTotalCol(null,collectedNumbers ); 
+   const columns = ['A','E']
+     columns.forEach((col, i)=>{ 
+     if(col === 'A'){
+          const rs = checkLimit(cal[`column${col}`],valueA, col)
+          message.push(rs)
+        } else{ 
+             const rs =  checkLimit(cal[`column${col}`],valueE, col)
+            message.push(rs)
+       }
+     })
 
+     console.log(message)
+   return
+//    Object.keys(pairs).forEach(async key => {
+    
+//     //console.log(`${key}: ColumnA: ${cal.columnA} \nColumnE: ${cal.columnE}`);
+//     let message = []; 
+//     const columns = ['A','E']
+//       Object.keys(cal).forEach((k , index) => {
+//         if(k === "message") {
+//             return
+//         }else{ 
+//           checkLimit(cal[k], columns[index], k).then(res => {
+//             if(res !== null ){ 
+//                 islimit = true;
+//                 message.push(res);
+//             }
+//         })
+//          }
+//       })
+        
+// }) 
+  
+}
+// create function determin if value is greater than ,limit   
+async function checkLimit(currentTotal , value2, column){ // 950 , 80 
+     const limit = 1000
+    
+     const newTotal = parseInt(currentTotal)  + parseInt(value2) ; // 1030
+
+     console.log(`new total for Column ${column}: ${newTotal}`);
+     if(currentTotal >= limit){ 
+        return `Can't add new value to Column ${column} has already reached the limit of ${limit}`;
+     }
+     if(newTotal > limit){ // 1030 > 1000
+        const available = limit - currentTotal // 1000-950 = 50   
+       return `Adding ${value2} to Column ${column} will exceed the limit of ${limit} by ${parseInt(newTotal) - parseInt(limit)}. Able to is ${available}`;
+                      // response should be in format Adding 80 to Column A will exceed the limit of 1000 by 30. Available is 50
+     }
+    return `Value can be added to Column ${column}. New total will be ${newTotal}`;
+}
