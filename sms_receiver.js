@@ -46,8 +46,8 @@ const io = new Server(server, {
     }
 });
 
- server.listen(3000, () => { 
-    console.log('Websocket server listening on port 3000');
+ server.listen(3001, () => { 
+    console.log('Websocket server listening on port 3001');
 }); 
 
 async function startModem(config) {
@@ -57,6 +57,7 @@ async function startModem(config) {
     let parsed = {}; 
    // const contact  = await findSimNum(80); 
    // console.log(JSON.stringify(contact))  
+
     const port = new SerialPort({
         path: comport, 
         baudRate: 115200, 
@@ -156,6 +157,8 @@ parser.on('data', async (data) => {
                      return; 
                     }
             }else if (parsed?.sender && parsed?.datetime_received )  {
+                //add  logic check limit before insert if message contain data: 
+
                   const isExtracted = await extractMessageWithDash(parsed.sender, message) // 
                   if(isExtracted.isReply === false){ 
                     return ; 
@@ -437,31 +440,56 @@ async function extractMessageWithDash( sender,  message) {
      }
      const columnList = ["columnA", "columnB", "columnC", "columnD", "columnE"]; 
      const parts = number.split('-'); 
-     console.log("Extracted parts: ", parts);
-     const data = {}; 
-
-      // validation number column B = part[1] to D = part[3] must value of 0 -9 
-    if (parts.slice(1, 4).some(part => isNaN(part) || part < 0 || part > 9)) {
-      // response sample : Invalid Number : specific number should be between 0-9 for example if part[1] is invalid response should be Invalid Number - Column B should be between 0-9
+     
+     
+     // validation number column B = part[1] to D = part[3] must value of 0 -9 
+     if (parts.slice(1, 4).some(part => isNaN(part) || part < 0 || part > 9)) {
+         // response sample : Invalid Number : specific number should be between 0-9 for example if part[1] is invalid response should be Invalid Number - Column B should be between 0-9
          const invalidColumns = [];
-            if (isNaN(parts[1]) || parts[1] < 0 || parts[1] > 9) invalidColumns.push(`Invalid Number - Column B : ${parts[1]} should be between 0-9`);
-            if (isNaN(parts[2]) || parts[2] < 0 || parts[2] > 9) invalidColumns.push(`Invalid Number - Column C : ${parts[2]} should be between 0-9`);
-            if (isNaN(parts[3]) || parts[3] < 0 || parts[3] > 9) invalidColumns.push(`Invalid Number - Column D : ${parts[3]} should be between 0-9`);
-           response = `${invalidColumns.join('\n')}`;
-        ;
-        return {
-         isInserted: false,
-         response
-      }; 
-     }
-     columnList.forEach((column, index) => {
+         if (isNaN(parts[1]) || parts[1] < 0 || parts[1] > 9) invalidColumns.push(`Invalid Number - Column B : ${parts[1]} should be between 0-9`);
+         if (isNaN(parts[2]) || parts[2] < 0 || parts[2] > 9) invalidColumns.push(`Invalid Number - Column C : ${parts[2]} should be between 0-9`);
+         if (isNaN(parts[3]) || parts[3] < 0 || parts[3] > 9) invalidColumns.push(`Invalid Number - Column D : ${parts[3]} should be between 0-9`);
+         response = `${invalidColumns.join('\n')}`;
+         
+         return {
+             isInserted: false,
+             response
+            }; 
+        } 
+        // check user inputs
+        const valB_To_valD = [parts[1],parts[2], parts[3]];  
+        const joinedNumbers = valB_To_valD.join('-'); 
+        const checkTotal = await addingColumnAccordingPair(parts[0], joinedNumbers,parts[4]);    
+        // if no return console.log (able )
+       
+        console.log("Check Total: ", checkTotal);
+        if(checkTotal.response.some(m => m !== undefined)){
+            response = `For ${joinedNumbers}:\n${checkTotal.response.join('\n')}` 
+            return { 
+                isInserted: false,
+                response
+            }
+        }
+        
+
+        // if(checkTotal.isLimit === true){ 
+        //     //return 
+        //     response =`For ${joinedNumbers}\n${checkTotal.response.join('\n')}`
+        //    return { 
+        //       isInserted : false, 
+        //       response
+        //    }
+        // }
+         
+       const data = {}; 
+       columnList.forEach((column, index) => {
         data[column] = parseInt(parts[index]);
      });
     //  data['group_no'] = groupNumber.group_list;
      data['sim_id'] = groupNumber.sim_id;
     try {
       await Extract.create(data);
-      response = `DateTime Recieved: ${new Date().toLocaleString()} \nMessage: ${number}`;
+      response = `DateTime Recieved: ${new Date().toLocaleString()} \nMessage: ${parts.join('-')} `;
       return {
          isInserted: true,
         response
@@ -473,6 +501,7 @@ async function extractMessageWithDash( sender,  message) {
     }
   }
 }
+
     //test database 
     let lastid = 0; 
     // update db to read  
@@ -614,12 +643,13 @@ modems.forEach(config => startModem(config));
 async function assembleNumbers(){  
  // get all numbers a b c 
      const listNumbers = {}; //list of number  { values: [columnB, columnC, columnD]} 
-
      try{
 
          const numbers = await Extract.findAll({ 
              attributes: ['ColumnA','ColumnB', 'ColumnC', 'ColumnD','ColumnE'], 
             })
+
+       
             numbers.forEach((num , index) => {
                 //      console.log(`Number ${index}: B=${num.dataValues?.ColumnB}, C=${num.dataValues?.ColumnC}, D=${num.dataValues?.ColumnD}`);
                 listNumbers[`Number${index}`] = {
@@ -643,68 +673,113 @@ async function assembleNumbers(){
                     [key]: obj.values
                 }
             });
-            //  console.log("Combined Numbers: ", combinedNumbers); 
+           //console.log("Combined Numbers: ", combinedNumbers); 
             return combinedNumbers;
         }catch(error){
-            console.log('Error fetching from database');  
+            console.log('Error fetching from database', error);  
             return; 
         }
 }
-async function addingColumnAccordingPair(){ 
+async function addingColumnAccordingPair(valueA ,valueB_D , valueE){ 
     /* 
     data [30-2-3-1-4]  data[120-1-4-5-4]
     data [20-2-3-1-20] data[400-1-4-5-100]
     group to 2-3-1 
     add first and last 30 + 20 = 50 , 4+20 = 24
     */
+    let islimit = false;
       const assemble =  await assembleNumbers();
-   //console.log(assemble); 
-   //for loops 
-    let uniqueNum = []; 
-   // console.log(assemble); 
-     const missingFields = {};
-    assemble.forEach((item, index) => {
-    const value = item[`Number${index}`][0];
-   //     console.log(item);
-      if (!uniqueNum.includes(value)) {
-        uniqueNum.push(`${value}`);
-       }
-     });
-   const pairs = {} ;  
-  assemble.forEach((item, index) => {
-    const value = item[`Number${index}`][0];
-    const columnA = item[`Number${index}`][1];
-    const columnE = item[`Number${index}`][2];
-   
-     // if uniqueNum ==== value push columnA and columnE to pairs[value]
-     // if double value of uniqueNum === value push columnA and columnE to pairs[value] and add to existing value in pairs[value]
-    if (!pairs[value]) {
-        pairs[value] = {
+      //for loops 
+      let uniqueNum = []; 
+      // console.log(assemble); 
+      assemble.forEach((item, index) => {
+          const value = item[`Number${index}`][0];
+          //     console.log(item);
+          if (!uniqueNum.includes(value)) {
+              uniqueNum.push(`${value}`);
+            }
+        });
+      // console.log(JSON.stringify(uniqueNum));
+      const pairs = {} ;  
+      assemble.forEach((item, index) => {
+          const value = item[`Number${index}`][0];
+          const columnA = item[`Number${index}`][1];
+          const columnE = item[`Number${index}`][2];
+      
+          
+          // if uniqueNum ==== value push columnA and columnE to pairs[value]
+          // if double value of uniqueNum === value push columnA and columnE to pairs[value] and add to existing value in pairs[value]
+          if (!pairs[value]) {
+              pairs[value] = {
             ColumnA: [columnA],
             ColumnE: [columnE]
         }
     }
     else {
-    
+        
         pairs[value].ColumnA.push(columnA);
         pairs[value].ColumnE.push(columnE);
     }
     
-  });
-  
+});
+
+ //console.log(JSON.stringify(pairs));      
+
    //sum all columnA and columnE in pairs 
-   Object.keys(pairs).forEach(async key => {
-       let ListColumnA = []; 
+    if(!pairs[valueB_D]){ 
+        pairs[valueB_D] = {
+            ColumnA: [0],
+            ColumnE: [0]
+        }
+    }
+     let ListColumnA = []; 
      let ListColumnE = []; 
-    
-    ListColumnA = pairs[key].ColumnA
-    ListColumnE = pairs[key].ColumnE
-    const collectedNumbers = { 
-        ListColumnA,
-        ListColumnE
-    }   
    
-     const cal =  await calculateTotalCol(null,collectedNumbers ); 
-    console.log(`${key}: ColumnA: ${cal.columnA} \nColumnE: ${cal.columnE}`);
-}) 
+     ListColumnA = pairs[valueB_D].ColumnA  
+     ListColumnE = pairs[valueB_D].ColumnE  
+     const collectedNumbers = { 
+       ListColumnA,
+       ListColumnE
+   }  
+   let message = []; 
+   const cal =  await calculateTotalCol(null,collectedNumbers ); 
+   // console.log("Calculated Total Column: ", cal);
+   const columns = ['A','E']
+   const data = {ColA:[], ColE:[]};
+     columns.forEach((col, i)=>{ 
+     if(col === 'A'){
+          const rs = checkLimit(cal[`column${col}`],valueA, col)
+        //   data.ColA.push(rs.canAdd); 
+        //   data.ColA.push(rs.ableToAdd);
+          message.push(rs)
+          return 
+        } else{ 
+           if(message.some(m => m !== undefined)){
+            if(message.some(m => m === undefined)){
+                const rs =  checkLimit(cal[`column${col}`],valueE, col)
+                message.push(rs)
+            }     
+          return
+        } 
+       }
+     })
+     return {
+        response: message
+    }  
+}
+// create function determin if value is greater than ,limit   
+ function checkLimit(currentTotal , value2, column){ // 950 , 80 
+     const limit = 1000
+     const newTotal = parseInt(currentTotal)  + parseInt(value2) ; // 1030
+     const available = limit - currentTotal // 1000-950 = 50   
+     let ableToAdd = 0;
+      console.log('current total: ', currentTotal)
+     console.log(`new total for Column ${column}: ${newTotal}`);
+     let canAdd = false ;
+     if(currentTotal === limit){ 
+         return `Column ${column} Current ${currentTotal}:\nCan't add new value already reached the limit of ${limit}`
+     }else if (newTotal > limit){ 
+         return `Column ${column} Current ${currentTotal}:\nAdding ${value2} will exceed the limit of ${limit}. Available to add: ${available}`;  
+     }
+     return 
 }

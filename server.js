@@ -57,7 +57,7 @@ async function startModem(config) {
 //    const contact  = await findSimNum(80); 
 //    console.log(JSON.stringify(contact))  
      
-   const assemble = await addingColumnAccordingPair('980', '1-7-1', '950');
+   const assemble = await addingColumnAccordingPair('950', '1-7-1', '950');
     //console.log("Assembled Numbers: ", assemble);
     return 
     const port = new SerialPort({
@@ -617,51 +617,32 @@ async function addingColumnAccordingPair(valueA ,valueB_D , valueE){
    const columns = ['A','E']
      columns.forEach((col, i)=>{ 
      if(col === 'A'){
-          const rs = checkLimit(cal[`column${col}`],valueA, col)
+          const rs = checkLimit(cal[`column${col}`],valueA, col,valueB_D)
           message.push(rs)
         } else{ 
-             const rs =  checkLimit(cal[`column${col}`],valueE, col)
+             const rs =  checkLimit(cal[`column${col}`],valueE, col, valueB_D)
             message.push(rs)
        }
      })
-
-     console.log(message)
+     response = message.join('\n'); 
+     console.log(response);
    return
-//    Object.keys(pairs).forEach(async key => {
-    
-//     //console.log(`${key}: ColumnA: ${cal.columnA} \nColumnE: ${cal.columnE}`);
-//     let message = []; 
-//     const columns = ['A','E']
-//       Object.keys(cal).forEach((k , index) => {
-//         if(k === "message") {
-//             return
-//         }else{ 
-//           checkLimit(cal[k], columns[index], k).then(res => {
-//             if(res !== null ){ 
-//                 islimit = true;
-//                 message.push(res);
-//             }
-//         })
-//          }
-//       })
-        
-// }) 
   
 }
 // create function determin if value is greater than ,limit   
-async function checkLimit(currentTotal , value2, column){ // 950 , 80 
+ function checkLimit(currentTotal , value2, column,columnB_to_D){ // 950 , 80 
      const limit = 1000
     
      const newTotal = parseInt(currentTotal)  + parseInt(value2) ; // 1030
 
      console.log(`new total for Column ${column}: ${newTotal}`);
      if(currentTotal >= limit){ 
-        return `Can't add new value to Column ${column} has already reached the limit of ${limit}`;
+        return `For ${columnB_to_D}:\nCan't add new value to Column ${column} has already reached the limit of ${limit}`;
      }
      if(newTotal > limit){ // 1030 > 1000
         const available = limit - currentTotal // 1000-950 = 50   
-       return `Adding ${value2} to Column ${column} will exceed the limit of ${limit} by ${parseInt(newTotal) - parseInt(limit)}. Able to is ${available}`;
+       return `For ${columnB_to_D}:\nAdding ${value2} to Column ${column} will exceed the limit of ${limit} by ${parseInt(newTotal) - parseInt(limit)}. Able to is ${available}`;
                       // response should be in format Adding 80 to Column A will exceed the limit of 1000 by 30. Available is 50
      }
-    return `Value can be added to Column ${column}. New total will be ${newTotal}`;
+    return 
 }
