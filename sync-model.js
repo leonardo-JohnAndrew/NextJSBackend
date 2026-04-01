@@ -1,7 +1,7 @@
 const sequelize = require("./db/connection"); 
 
-const {Purchase ,PurchaseItems} = require("./db/models/index"); 
-sequelize.sync({ alter: true }) // creates tables if they don't exist
+const {ALists , ELists} = require("./db/models/index"); 
+sequelize.sync() // creates tables if they don't exist
     .then(() => console.log('Database synced'))
     .catch((err) => console.error(err));
 

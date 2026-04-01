@@ -414,3 +414,23 @@ export async function addingColumnAccordingPair(){
     console.log(`${key}: ColumnA: ${cal.columnA} \nColumnE: ${cal.columnE}`);
 }) 
 }
+ 
+// function randomizer example 123 different order 321, 213, 132, 231, 312 unique 
+export function getPermutations(numbers){ 
+      const results = [];
+      function permute(arr, memo = []) {
+        if (arr.length === 0) {
+          results.push(memo);
+        } else {
+          for (let i = 0; i < arr.length; i++) {
+            const curr = arr.slice();
+            const next = curr.splice(i, 1);
+            permute(curr.slice(), memo.concat(next));
+          }
+        }
+      }
+      permute(numbers);
+      return results;
+}
+
+console.log(getPermutations([7,4,2]));

@@ -10,6 +10,9 @@ import Extracted from "./extracted.js";
 import RegisteredSim from "./registeredNumber.js";
 import UnknownNumber from "./unknownNumber.js";
 import Group from "./group.js";
+import CombinationPattern from "./combination.js"; 
+import ALists from "./Alist.js";
+import ELists from "./Elist.js";
 
 // 1:m
 User.hasMany(SMS ,{
@@ -103,5 +106,8 @@ export {
     Extracted, 
     Group,
     RegisteredSim,
-    UnknownNumber 
+    UnknownNumber, 
+    CombinationPattern, 
+    ELists, 
+    ALists
 }

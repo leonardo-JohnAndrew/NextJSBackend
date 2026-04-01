@@ -10,8 +10,10 @@ const RegisteredSim = require('./db/models/registeredNumber')
 const UnknownNumber = require('./db/models/unknownNumber');
 const Group = require('./db/models/group'); 
 const  sequelize = require('./db/connection');
-const { Extract, CombinationPattern } = require('./db/models');
+const { Extract, CombinationPattern, ALists, ELists } = require('./db/models');
 const { Op } = require('sequelize');
+const { Cossette_Texte } = require('next/font/google');
+const { error, table } = require('console');
 
 // list of comports to check for GSM modem, with their corresponding PINs 
 const modems = [ 
@@ -58,7 +60,7 @@ async function startModem(config) {
    
 //const extract = await extractMessageWithDash('+639503690340', 'p:30-311-4');
 //console.log(JSON.stringify(extract)); 
-//await insertPatternToDb(); 
+await insertPatternToDb(); 
   return
     const port = new SerialPort({
         path: comport, 
@@ -813,24 +815,29 @@ async function insertPatternToDb() {
       searchPattern(7,3,9); 
     //get data in databases 
  try{ 
-     const dataPatterns = await CombinationPattern.findAll({
+     const dataAPatterns = await ALists.findAll({
          where: { 
             createdAt:{ 
                 [Op.between]: [dateRange.start ,dateRange.end]
             } 
          }
-     });
+        });
+        const dataEPatterns = await ELists.findAll({ 
+             where: { 
+            createdAt:{ 
+                [Op.between]: [dateRange.start ,dateRange.end]
+            } 
+         }
+        })
     // 
-     if(dataPatterns.length === 0 ){ 
-        const patternlist  = generateCombinationPatterns(); 
-        const patternData = patternlist.map(item =>({ 
-          columnA: item, 
-          columnE: item, 
-        })); 
-       const inserted = await CombinationPattern.bulkCreate(patternData);
-       console.log(inserted);  
-     }  
- }catch{ 
+     if(dataAPatterns.length === 0 ){ 
+          insert("A"); 
+     }
+      if(dataEPatterns.length === 0){ 
+          insert("B")
+     }
+ }catch(err){ 
+    console.log("Something Happened: ", err); 
  }
 }
 
@@ -846,4 +853,38 @@ async function insertPatternToDb() {
     })
      console.log(list);
   }
- 
+
+  async function insert(table) {
+    const pattern =  generateCombinationPatterns(); 
+    await Promise.all(pattern.map(async(pat) => { 
+       const extract = pat.split("-"); 
+       const  digit1 = extract[0]; 
+       const  digit2 = extract[1];
+       const  digit3 = extract[2]; 
+       
+       try{ 
+
+         if(table === "A"){
+        
+             await ALists.create({ 
+                 digit1: digit1 , 
+                 digit2: digit2, 
+                 digit3: digit3
+                })
+         }else if(table === 'B'){ 
+
+             await ELists.create({ 
+                 digit1: digit1 , 
+                 digit2: digit2, 
+                 digit3: digit3
+                })
+         } 
+        }catch(err){ 
+             console.log("error", error); 
+        }
+   })
+); 
+   
+  }
+
+   

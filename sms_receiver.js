@@ -112,7 +112,7 @@ parser.on('data', async (data) => {
        const result = CMGRParser(data);
        //console.log("Parsed result from header: ", result);
        if(result) {
-           if (!result.sender || !result.sender.startsWith('+63')) {
+           if(!result.sender || !result.sender.startsWith('+63')) {
                // check if number starts with +63
                waitingformessage = false;
                return; // ignore message
@@ -441,7 +441,6 @@ async function extractMessageWithDash( sender,  message) {
      const columnList = ["columnA", "columnB", "columnC", "columnD", "columnE"]; 
      const parts = number.split('-'); 
      
-     
      // validation number column B = part[1] to D = part[3] must value of 0 -9 
      if (parts.slice(1, 4).some(part => isNaN(part) || part < 0 || part > 9)) {
          // response sample : Invalid Number : specific number should be between 0-9 for example if part[1] is invalid response should be Invalid Number - Column B should be between 0-9
@@ -470,8 +469,6 @@ async function extractMessageWithDash( sender,  message) {
                 response
             }
         }
-        
-
         // if(checkTotal.isLimit === true){ 
         //     //return 
         //     response =`For ${joinedNumbers}\n${checkTotal.response.join('\n')}`
@@ -479,8 +476,7 @@ async function extractMessageWithDash( sender,  message) {
         //       isInserted : false, 
         //       response
         //    }
-        // }
-         
+        // }         
        const data = {}; 
        columnList.forEach((column, index) => {
         data[column] = parseInt(parts[index]);
@@ -754,13 +750,13 @@ async function addingColumnAccordingPair(valueA ,valueB_D , valueE){
           message.push(rs)
           return 
         } else{ 
-           if(message.some(m => m !== undefined)){
             if(message.some(m => m === undefined)){
                 const rs =  checkLimit(cal[`column${col}`],valueE, col)
                 message.push(rs)
-            }     
+                
           return
         } 
+
        }
      })
      return {
@@ -773,7 +769,7 @@ async function addingColumnAccordingPair(valueA ,valueB_D , valueE){
      const newTotal = parseInt(currentTotal)  + parseInt(value2) ; // 1030
      const available = limit - currentTotal // 1000-950 = 50   
      let ableToAdd = 0;
-      console.log('current total: ', currentTotal)
+     console.log('current total: ', currentTotal)
      console.log(`new total for Column ${column}: ${newTotal}`);
      let canAdd = false ;
      if(currentTotal === limit){ 
