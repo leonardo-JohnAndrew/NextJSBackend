@@ -14,9 +14,11 @@ const { Extract, CombinationPattern, ALists, ELists } = require('./db/models');
 const { Op } = require('sequelize');
 const { Cossette_Texte } = require('next/font/google');
 const { error, table } = require('console');
+const { createWatchProgram } = require('typescript');
 
 // list of comports to check for GSM modem, with their corresponding PINs 
 const modems = [ 
+    
     // {port: 'COM3', pin: ""},
     // {port: 'COM4', pin: ""},
     // {port: 'COM5', pin: ""},
@@ -29,9 +31,12 @@ const modems = [
     {port: 'COM12', pin: ""},
     // {port: 'COM13', pin: ""},
     // {port: 'COM14', pin: ""},
+    // {port: 'COM15', pin: ""},
     // {port: 'COM16', pin: ""},
-  //  {port: 'COM17', pin: ""},
-    // {port: 'COM18', pin: ""}, 
+    // {port: 'COM17', pin: ""},
+    // {port: 'COM18', pin: ""},
+    // {port: 'COM19', pin: ""},
+    // {port: 'COM20', pin: ""},
 ]  // comport list & pin 
 
 // db config 
@@ -57,17 +62,16 @@ async function startModem(config) {
    // const contact  = await findSimNum(80); 
    // console.log(JSON.stringify(contact))  
 
-   
-//const extract = await extractMessageWithDash('+639503690340', 'p:30-311-4');
-//console.log(JSON.stringify(extract)); 
-await insertPatternToDb(); 
-  return
-    const port = new SerialPort({
-        path: comport, 
-        baudRate: 115200, 
-        incomingSMSIndication: true 
+   const port = new SerialPort({
+       path: comport, 
+       baudRate: 115200, 
+       incomingSMSIndication: true 
     });
- 
+    
+    // SerialPort.list().then(port => {
+    //  console.log(port); 
+    // })
+
     const parser = port.pipe(new ReadlineParser({ delimiter: '\r\n' }));
     let waitingformessage = false; 
     let isReply = false ; 
@@ -75,14 +79,14 @@ await insertPatternToDb();
     // open 
     port.on('open', () => {
         console.log(`Serial port ${comport} opened.`);
+        setTimeout(() => port.write('ATE0\r'), 200);
+        setTimeout(() => port.write('AT+CPIN?\r'), 500);
+        setTimeout(() => port.write('AT+CMGF=1\r'), 1000);
+        setTimeout(() => port.write('AT+CNUM\r'), 1500);
+        setTimeout(() => port.write('AT+CSCS="GSM"\r'), 1500);
+        setTimeout(() => port.write('AT+CPMS="ME","ME","ME"\r'), 2000); // set message format and validity period
+        setTimeout(() => port.write('AT+CNMI=2,2,0,0,0\r'), 2500)
         console.log(`listening to ${comport} for incoming messages...`);
-setTimeout(() => port.write('ATE0\r'), 200);
-setTimeout(() => port.write('AT+CPIN?\r'), 500);
-setTimeout(() => port.write('AT+CMGF=1\r'), 1000);
-setTimeout(() => port.write('AT+CNUM\r'), 1500);
-setTimeout(() => port.write('AT+CSCS="GSM"\r'), 1500);
-setTimeout(() => port.write('AT+CPMS="ME","ME","ME"\r'), 2000); // set message format and validity period
-setTimeout(() => port.write('AT+CNMI=2,2,0,0,0\r'), 2500)
 //setTimeout(() => port.write('AT+CMGL="ALL"\r'), 3000); // read all REC UNREAD 
     });  
 
@@ -413,6 +417,8 @@ async function calculateTotalCol(sender , objects ={}){
     //extractNumberedMessages can also use from the refrated.js it use the table extracteds with columnA, columnB, columnC, columnD
 async function extractMessageWithDash( sender,  message) { 
     const  isReply = false; 
+    //Initialized patterns 
+    await insertPatternToDb(); 
     const groupNumber = await FindGroupNumber(sender);
     //sim id 
     if(groupNumber.sim_id === null || groupNumber.sim_id === 0) { 
@@ -443,7 +449,6 @@ async function extractMessageWithDash( sender,  message) {
         };  
      }
     
-     
      const columnList = ["columnA", "columnB", "columnC", "columnD", "columnE"]; 
      const parts = number.split('-'); 
      //console.log("Separated Parts: ", parts);
@@ -454,9 +459,11 @@ async function extractMessageWithDash( sender,  message) {
              response
             }
         }
+     //insert to db permutation 
 
         const seperated = parts[1].split('');
         parts.splice(1, 1, ...seperated); 
+
      // validation number column B = part[1] to D = part[3] must value of 0 -9 
      if (parts.slice(1, 4).some(part => isNaN(part) || part < 0 || part > 9)) {
          // response sample : Invalid Number : specific number should be between 0-9 for example if part[1] is invalid response should be Invalid Number - Column B should be between 0-9
@@ -470,21 +477,56 @@ async function extractMessageWithDash( sender,  message) {
              isInserted: false,
              response
             }; 
-        } 
-        // check user inputs
-        const valB_To_valD = [parts[1],parts[2], parts[3]];  
-        const joinedNumbers = valB_To_valD.join('-'); 
-        const checkTotal = await addingColumnAccordingPair(parts[0], joinedNumbers,parts[4]);    
-        // if no return console.log (able )
-       
-        console.log("Check Total: ", checkTotal);
-        if(checkTotal.response.some(m => m !== undefined)){
-            response = `For ${joinedNumbers}:\n${checkTotal.response.join('\n')}` 
-            return { 
-                isInserted: false,
-                response
+        }
+        
+
+    //get permutation 
+        const permu = getPermutations(parts[1], parts[2], parts[3]);  
+        if(permu.length === 0) {
+            return {
+                isInserted: false, 
+                response: "no permu"
             }
         }
+    //check limit 
+     const alimit =  await limitation(parts[1],parts[2],parts[3],parts[0],'A',1000);
+     const elimit =  await limitation(parts[1],parts[2],parts[3],parts[4],'E',5000);
+
+        if(alimit.isAdded === false){ 
+          return { 
+            isInserted: false , 
+            response :  `For ${parts[1]}${parts[2]}${parts[3]}:\n${alimit.message}`
+          }; 
+        }else if(elimit.isAdded === false){  
+            permu.unshift(...permu.splice(permu.indexOf(`${parts[1]}-${parts[2]}-${parts[3]}`), 1));
+            const removeDash = permu.map((p)=> p.replaceAll("-", "")); 
+            console.log(removeDash); 
+         return { 
+              isInserted: false , 
+              response :  `For ${removeDash.map(p => p).join(' , ')}:\n${elimit.message}`
+            }; 
+        }; 
+         
+        //add A list and Elist 
+        await addAlist(parts[1], parts[2], parts[3], parts[0]);  
+        permu.map(async(p)=>{
+          const split = p.split('-'); 
+           await addElist(split[0], split[1],split[2], parts[4]); 
+        }); 
+       // check user inputs
+        const valB_To_valD = [parts[1],parts[2], parts[3]];  
+        const joinedNumbers = valB_To_valD.join('-'); 
+        // const checkTotal = await addingColumnAccordingPair(parts[0], joinedNumbers,parts[4]);    
+        // // if no return console.log (able )
+       
+        // console.log("Check Total: ", checkTotal);
+        // if(checkTotal.response.some(m => m !== undefined)){
+        //     response = `For ${joinedNumbers}:\n${checkTotal.response.join('\n')}` 
+        //     return { 
+        //         isInserted: false,
+        //         response
+        //     }
+        // }
         // if(checkTotal.isLimit === true){ 
         //     //return 
         //     response =`For ${joinedNumbers}\n${checkTotal.response.join('\n')}`
@@ -501,7 +543,7 @@ async function extractMessageWithDash( sender,  message) {
      data['sim_id'] = groupNumber.sim_id;
     try {
       await Extract.create(data);
-      response = `DateTime Recieved: ${new Date().toLocaleString()} \nMessage: ${parts.join('-')} `;
+      response = `DateTime Recieved: ${new Date().toLocaleString()} \nMessage: ${message} `;
       return {
          isInserted: true,
         response
@@ -812,7 +854,6 @@ async function insertPatternToDb() {
  
       const dateRange  = dateTodayRange();
       console.log("range", dateRange); 
-      searchPattern(7,3,9); 
     //get data in databases 
  try{ 
      const dataAPatterns = await ALists.findAll({
@@ -842,17 +883,6 @@ async function insertPatternToDb() {
 }
 
  // function search patterns 
- async function searchPattern(num1 , num2, num3){ 
-   const pattern =   generateCombinationPatterns(); 
-   const list = [];
-   
-    pattern.map(pat => { 
-        if(pat.includes(num1) && pat.includes(num2) && pat.includes(num3)){ 
-            list.push(pat); 
-        } 
-    })
-     console.log(list);
-  }
 
   async function insert(table) {
     const pattern =  generateCombinationPatterns(); 
@@ -869,14 +899,16 @@ async function insertPatternToDb() {
              await ALists.create({ 
                  digit1: digit1 , 
                  digit2: digit2, 
-                 digit3: digit3
+                 digit3: digit3,
+                 data:0
                 })
          }else if(table === 'B'){ 
 
              await ELists.create({ 
                  digit1: digit1 , 
                  digit2: digit2, 
-                 digit3: digit3
+                 digit3: digit3, 
+                 data:0
                 })
          } 
         }catch(err){ 
@@ -886,5 +918,128 @@ async function insertPatternToDb() {
 ); 
    
   }
+function  getPermutations(b ,c ,d) {
+      const combination =  [ 
+        `${b}-${c}-${d}`, 
+        `${b}-${d}-${c}`, 
+        `${d}-${b}-${c}`, 
+        `${d}-${c}-${b}`, 
+        `${c}-${b}-${d}`, 
+        `${c}-${d}-${b}`, 
+    ]
+    const uniqueCombination = [...new Set(combination)]; 
+    return uniqueCombination; 
 
-   
+}
+// add to ELists and Alist 
+async function addAlist(b,c,d, data){ 
+    console.log(b,c,d , )
+    const date = dateTodayRange(); 
+    try{
+        // Alist single 
+        await ALists.update({
+            data:sequelize.Sequelize.literal(`data + ${data}`)
+        },{
+            where:{
+                digit1:parseInt(b), 
+                digit2:parseInt(c),
+            digit3:parseInt(d), 
+            createdAt:{
+                [Op.between]: [date.start , date.end]
+            }
+        }
+    })
+}catch(error){ 
+    console.log("Failed Update Alist :", error); 
+}
+}
+
+async function  addElist(b,c,d,data) { 
+    const date = dateTodayRange(); 
+    console.log(b,c,d )
+    
+    try{
+        // Alist single 
+       await ELists.update({
+        data:sequelize.Sequelize.literal(`data + ${data}`)
+       },{
+           where:{
+            digit1:parseInt(b), 
+            digit2:parseInt(c),
+            digit3:parseInt(d), 
+            createdAt:{ 
+                [Op.between]:[date.start , date.end]
+            }
+        }
+       })
+     }catch(error){ 
+         console.log("Failed Update Elist :", error); 
+     }
+    }
+async function limitation(b,c,d ,data ,table ,limit, setE=[]) {
+    date = dateTodayRange() ; 
+    isAdded = false; 
+    let  total = 0; 
+    let available = 0; 
+    let newAdded =0 ;
+    try{
+      if(table === 'A'){
+          total =await ALists.sum('data',{
+            where:{
+                digit1:parseInt(b),
+                digit2:parseInt(c),
+                digit3:parseInt(d), 
+             
+                
+            }
+        }) 
+        console.log("totalA", total);  
+        
+    }else{
+        // if(setE.length === 0 ) return; 
+        // setE.map(async(p,index)=>{
+        //     const digit = p.split('-');
+        //     console.log(digit); 
+        //     const partial =  await ELists.sum('data',{
+        //         where:{
+        //             digit1:digit[0], 
+        //             digit2:digit[1],
+        //             digit3:digit[2]
+        //         }
+        //     })
+        //     total +=partial || 0;
+        //      console.log('current: ', total);
+            
+        // })
+         // single 
+          total =await ELists.sum('data',{
+            where:{
+                digit1:parseInt(b),
+                digit2:parseInt(c),
+                digit3:parseInt(d)               
+            }
+    })
+    }
+    console.log("totalE", total);   
+    newAdded  = parseInt(total) + parseInt(data); 
+    console.log("new added: ", newAdded); 
+    available = limit - total;
+    if(total === limit){ 
+        return { 
+            isAdded: false , 
+            message: `Column ${table} Current ${total}:\nCan't add new value already reached the limit of ${limit}`
+        }
+    }else if(newAdded> limit){ 
+        return { 
+            isAdded: false , 
+            message: `Column ${table} Current ${total}:\nAdding ${data} will exceed the limit of ${limit}. Available to add: ${available}`
+        }     
+    }else {
+        return { 
+            isAdded: true
+        }
+    }
+}catch(err){ 
+     console.log("Error Summation: ", err);   
+    }
+}

@@ -59,7 +59,6 @@ export async function  POST(request){
             PurchaseID: purchase.PurchaseID, 
         })); 
        const items =   await sequelize.models.purchaseItems.bulkCreate(purchaseItemsData);
-      
        if(!items || items.length === 0 || items === undefined ){
           await purchase.destroy({
               where: {PurchaseID: purchase.PurchaseID}

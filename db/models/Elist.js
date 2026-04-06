@@ -1,6 +1,6 @@
 const {DataTypes} = require('sequelize');
 const sequelize = require('../connection');
-const { time } = require('node:console');
+
 
 const ELists = sequelize.define('elist', {
     id: {
@@ -20,9 +20,12 @@ const ELists = sequelize.define('elist', {
     digit3: { 
           type: DataTypes.INTEGER , 
           allowNull: true,
+    }, 
+    data: {
+        type: DataTypes.INTEGER, 
+        allowNull: true, 
+        defaultValue: 0 , 
     }
-
 }, {});
-
 module.exports = ELists
 

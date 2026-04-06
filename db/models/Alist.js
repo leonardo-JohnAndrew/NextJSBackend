@@ -20,7 +20,12 @@ const ALists = sequelize.define('alist', {
     digit3: { 
           type: DataTypes.INTEGER , 
           allowNull: true,
-    }
+    }, 
+    data: { 
+          type: DataTypes.INTEGER, 
+          allowNull: true, 
+          defaultValue: 0, 
+    } 
 
 }, {});
 

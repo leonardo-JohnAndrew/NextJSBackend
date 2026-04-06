@@ -15,21 +15,21 @@ const { Op } = require('sequelize');
 
 // list of comports to check for GSM modem, with their corresponding PINs 
 const modems = [ 
-    // {port: 'COM3', pin: ""},
-    // {port: 'COM4', pin: ""},
-    // {port: 'COM5', pin: ""},
-    // {port: 'COM6', pin: ""},
-    // {port: 'COM7', pin: ""},
-    // {port: 'COM8', pin: ""},
-    // {port: 'COM9', pin: ""},
-    // {port: 'COM10', pin: ""},
-    // {port: 'COM11', pin: ""},
+    {port: 'COM3', pin: ""},
+    {port: 'COM4', pin: ""},
+    {port: 'COM5', pin: ""},
+    {port: 'COM6', pin: ""},
+    {port: 'COM7', pin: ""},
+    {port: 'COM8', pin: ""},
+    {port: 'COM9', pin: ""},
+    {port: 'COM10', pin: ""},
+    {port: 'COM11', pin: ""},
     {port: 'COM12', pin: ""},
-    // {port: 'COM13', pin: ""},
-    // {port: 'COM14', pin: ""},
-    // {port: 'COM16', pin: ""},
-  //  {port: 'COM17', pin: ""},
-    // {port: 'COM18', pin: ""}, 
+    {port: 'COM13', pin: ""},
+    {port: 'COM14', pin: ""},
+    {port: 'COM16', pin: ""},
+   {port: 'COM17', pin: ""},
+    {port: 'COM18', pin: ""}, 
 ]  // comport list & pin 
 
 // db config 
@@ -59,7 +59,6 @@ async function startModem(config) {
 //const extract = await extractMessageWithDash('+639503690340', 'p:30-311-4');
 //console.log(JSON.stringify(extract)); 
 //await insertPatternToDb(); 
-  return
     const port = new SerialPort({
         path: comport, 
         baudRate: 115200, 
