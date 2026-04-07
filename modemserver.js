@@ -15,6 +15,7 @@ const { Op } = require('sequelize');
 const { Cossette_Texte } = require('next/font/google');
 const { error, table } = require('console');
 const { createWatchProgram } = require('typescript');
+const { toASCII } = require('punycode');
 
 // list of comports to check for GSM modem, with their corresponding PINs 
 const modems = [ 
@@ -478,8 +479,7 @@ async function extractMessageWithDash( sender,  message) {
              response
             }; 
         }
-        
-
+    
     //get permutation 
         const permu = getPermutations(parts[1], parts[2], parts[3]);  
         if(permu.length === 0) {
@@ -489,9 +489,16 @@ async function extractMessageWithDash( sender,  message) {
             }
         }
     //check limit 
-     const alimit =  await limitation(parts[1],parts[2],parts[3],parts[0],'A',1000);
-     const elimit =  await limitation(parts[1],parts[2],parts[3],parts[4],'E',5000);
-
+     const alimit =  await limitation(parts[1],parts[2],parts[3],parts[0],'A',60);
+     const elimit =  await limitation(parts[1],parts[2],parts[3],parts[4],'E',50);
+      
+        if(alimit.isAdded === false & elimit.isAdded === false){ 
+           return{ 
+            isInserted : false, 
+// `Column ${table} Current ${total}:\nCan't add new value already reached the limit of ${limit}`
+            response: `For ${parts[1]}${parts[2]}${parts[3]}: \nColumn ${alimit.table} Current ${alimit.total}:\nAdding ${parts[0]} will exceed the limit \nChoose other combinations\nColumn ${elimit.table} Current ${elimit.total}:\nAdding ${parts[4]} will exceed the limit\nChoose other number`
+           }
+        }
         if(alimit.isAdded === false){ 
           return { 
             isInserted: false , 
@@ -503,7 +510,7 @@ async function extractMessageWithDash( sender,  message) {
             console.log(removeDash); 
          return { 
               isInserted: false , 
-              response :  `For ${removeDash.map(p => p).join(' , ')}:\n${elimit.message}`
+              response :  `For ${parts[1]}${parts[2]}${parts[3]}:\n${elimit.message}`
             }; 
         }; 
          
@@ -1025,14 +1032,21 @@ async function limitation(b,c,d ,data ,table ,limit, setE=[]) {
     console.log("new added: ", newAdded); 
     available = limit - total;
     if(total === limit){ 
+        
         return { 
             isAdded: false , 
-            message: `Column ${table} Current ${total}:\nCan't add new value already reached the limit of ${limit}`
+            table: table ,
+            total: total, 
+            available: available, 
+            message: `Column ${table} Current ${total}:\nCan't add new value already reached the limit.\n${table==='A'? "Choose other combination":"Choose other number"}`
         }
     }else if(newAdded> limit){ 
         return { 
             isAdded: false , 
-            message: `Column ${table} Current ${total}:\nAdding ${data} will exceed the limit of ${limit}. Available to add: ${available}`
+             table: table ,
+             available:available, 
+            total: total, 
+            message: `Column ${table} Current ${total}:\nAdding ${data} will exceed the limit .\n${table==='A'? "Choose other combination":"Choose other number"}`
         }     
     }else {
         return { 

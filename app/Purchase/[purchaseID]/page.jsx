@@ -3,7 +3,7 @@ import { useParams , usePathname } from "next/navigation"
 import { useCallback, useEffect , useState} from "react";
 import { notFound } from "next/navigation";
 import axios from "axios";
-import Table from "@/app/components/table";
+//import Table from "@/app/components/table";
 import {formatDates} from "@/functions/formattDate";
 export default function PurchaseDetails() {
      const pathname = usePathname(); 
@@ -65,7 +65,7 @@ return (
       <hr className = 'border-t border-gray-300'/>
       </div>     
 
-      <Table data = {purchaseDetails || isfetching === false? purchaseDetails : []} Ending = {formattedEnding} /> 
+      {/* <Table data = {purchaseDetails || isfetching === false? purchaseDetails : []} Ending = {formattedEnding} />  */}
     </>
 )
 }
